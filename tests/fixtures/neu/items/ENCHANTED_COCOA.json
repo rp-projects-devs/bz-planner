@@ -1,0 +1,16 @@
+{
+  "itemid": "minecraft:dye",
+  "displayname": "§aEnchanted Cocoa Beans",
+  "internalname": "ENCHANTED_COCOA",
+  "recipe": {
+    "A1": "",
+    "A2": "INK_SACK-3:32",
+    "A3": "",
+    "B1": "INK_SACK-3:32",
+    "B2": "INK_SACK-3:32",
+    "B3": "INK_SACK-3:32",
+    "C1": "",
+    "C2": "INK_SACK-3:32",
+    "C3": ""
+  }
+}

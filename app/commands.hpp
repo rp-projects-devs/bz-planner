@@ -1,0 +1,61 @@
+/**
+ * @file commands.hpp
+ * @brief Implementation of the `bz` sub-commands, independent of argument parsing.
+ *
+ * Each command returns a process exit code and lets exceptions propagate to main().
+ */
+#pragma once
+
+#include "bz/planner.hpp"
+#include "bz/pricing.hpp"
+#include "bz/scanner.hpp"
+#include "bz/solver.hpp"
+
+#include "display.hpp"
+
+#include <chrono>
+#include <filesystem>
+#include <string>
+
+namespace bz::app {
+
+/// Options shared by every command.
+struct GlobalOptions {
+    std::filesystem::path data_dir;         ///< Holds `neu/` and `cache/`.
+    PricingConfig pricing;                  ///< Trading strategy.
+    std::chrono::seconds cache_max_age{60}; ///< Bazaar cache freshness.
+    Style style;                            ///< Output styling.
+};
+
+/// Options of `bz scan`.
+struct ScanOptions {
+    ScanFilters filters; ///< Result filters.
+    PathOptions paths;   ///< Path enumeration limits.
+};
+
+/// Options of `bz item`.
+struct ItemOptions {
+    std::string id;    ///< Item to inspect.
+    PathOptions paths; ///< Path enumeration limits; max_depth also bounds the recipe tree.
+};
+
+/// Options of `bz plan`.
+struct PlanOptions {
+    std::string id;          ///< Item to craft.
+    Constraints constraints; ///< Sizing limits.
+    PathOptions paths;       ///< Path enumeration limits.
+};
+
+/// Ranks the most profitable crafts.
+int run_scan(const GlobalOptions& global, const ScanOptions& options);
+
+/// Shows an item's market data, recipe tree and best craft paths.
+int run_item(const GlobalOptions& global, const ItemOptions& options);
+
+/// Builds an execution plan for the best craft path of an item.
+int run_plan(const GlobalOptions& global, const PlanOptions& options);
+
+/// Downloads fresh Bazaar data and reports the state of local data.
+int run_update(const GlobalOptions& global);
+
+} // namespace bz::app

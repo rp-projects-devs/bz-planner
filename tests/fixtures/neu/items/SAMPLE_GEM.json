@@ -1,0 +1,10 @@
+{
+  "itemid": "minecraft:skull",
+  "displayname": "§5Sample Gem",
+  "internalname": "SAMPLE_GEM",
+  "recipe": {"A1": "ROUGH_GEM:40", "A2": "ROUGH_GEM:40", "count": 2},
+  "recipes": [
+    {"type": "crafting", "A1": "ROUGH_GEM:40", "A2": "ROUGH_GEM:40", "count": 2},
+    {"type": "forge", "inputs": ["ROUGH_GEM:80"], "count": 1, "duration": 3600}
+  ]
+}

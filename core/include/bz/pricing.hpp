@@ -1,0 +1,62 @@
+/**
+ * @file pricing.hpp
+ * @brief Conversion of Bazaar market data into unit costs and revenues.
+ *
+ * | Mode               | Price used              | API field               |
+ * |--------------------|-------------------------|-------------------------|
+ * | BuyMode::Instant   | lowest sell offer       | MarketData::buy_price   |
+ * | BuyMode::Order     | highest buy order       | MarketData::sell_price  |
+ * | SellMode::Instant  | highest buy order − tax | MarketData::sell_price  |
+ * | SellMode::Offer    | lowest sell offer − tax | MarketData::buy_price   |
+ */
+#pragma once
+
+#include "bz/model.hpp"
+
+#include <optional>
+
+namespace bz {
+
+/// How ingredients are bought.
+enum class BuyMode {
+    Instant, ///< Buy instantly from existing sell offers.
+    Order,   ///< Place a buy order and wait for it to fill.
+};
+
+/// How the crafted item is sold.
+enum class SellMode {
+    Instant, ///< Sell instantly into existing buy orders.
+    Offer,   ///< Place a sell offer and wait for it to fill.
+};
+
+/// Default Bazaar tax applied to sales (1.25 %).
+inline constexpr double kDefaultBazaarTax = 0.0125;
+
+/// Trading strategy used for every cost and revenue computation.
+struct PricingConfig {
+    BuyMode buy = BuyMode::Order;        ///< Ingredient side.
+    SellMode sell = SellMode::Offer;     ///< Output side.
+    double tax_rate = kDefaultBazaarTax; ///< Fraction of revenue lost on sales, in [0, 1).
+};
+
+/**
+ * @brief Price paid for one unit.
+ * @return The unit cost, or `std::nullopt` if the relevant price is not strictly positive.
+ */
+[[nodiscard]] std::optional<double> unit_buy_cost(const MarketData& market, BuyMode mode) noexcept;
+
+/**
+ * @brief Coins received for one unit, after tax.
+ * @return The unit revenue, or `std::nullopt` if the relevant price is not strictly positive.
+ */
+[[nodiscard]] std::optional<double> unit_sell_revenue(const MarketData& market, SellMode mode,
+                                                      double tax_rate) noexcept;
+
+/// Overload for items, returning `std::nullopt` when the item is not on the Bazaar.
+[[nodiscard]] std::optional<double> unit_buy_cost(const Item& item, BuyMode mode) noexcept;
+
+/// Overload for items, returning `std::nullopt` when the item is not on the Bazaar.
+[[nodiscard]] std::optional<double> unit_sell_revenue(const Item& item, SellMode mode,
+                                                      double tax_rate) noexcept;
+
+} // namespace bz

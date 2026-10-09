@@ -1,0 +1,47 @@
+{
+  "success": true,
+  "lastUpdated": 1782688693578,
+  "products": {
+    "ENCHANTED_COCOA": {
+      "product_id": "ENCHANTED_COCOA",
+      "quick_status": {
+        "productId": "ENCHANTED_COCOA",
+        "sellPrice": 459.8,
+        "sellVolume": 28462031,
+        "sellMovingWeek": 55510255,
+        "sellOrders": 532,
+        "buyPrice": 493.4,
+        "buyVolume": 25643680,
+        "buyMovingWeek": 9819512,
+        "buyOrders": 1126
+      }
+    },
+    "INK_SACK:3": {
+      "product_id": "INK_SACK:3",
+      "quick_status": {
+        "productId": "INK_SACK:3",
+        "sellPrice": 2.9,
+        "sellVolume": 1000000,
+        "sellMovingWeek": 90000000,
+        "sellOrders": 40,
+        "buyPrice": 3.1,
+        "buyVolume": 2000000,
+        "buyMovingWeek": 70000000,
+        "buyOrders": 60
+      }
+    },
+    "WHEAT": {
+      "product_id": "WHEAT",
+      "quick_status": {
+        "productId": "WHEAT",
+        "sellPrice": 5.5,
+        "buyPrice": 6.0,
+        "sellMovingWeek": 12000000,
+        "buyMovingWeek": 11000000
+      }
+    },
+    "NO_STATUS": {
+      "product_id": "NO_STATUS"
+    }
+  }
+}

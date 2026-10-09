@@ -1,0 +1,10 @@
+{
+  "itemid": "minecraft:skull",
+  "displayname": "§fFarm Merchant",
+  "internalname": "FARM_MERCHANT_NPC",
+  "recipes": [
+    {"type": "npc_shop", "cost": ["SKYBLOCK_COIN:7"], "result": "WHEAT:3"},
+    {"type": "npc_shop", "cost": ["SKYBLOCK_COIN:100", "WHEAT:2"], "result": "HAY_BLOCK"},
+    {"type": "npc_shop", "cost": ["SKYBLOCK_COPPER:25"], "result": "COMPOST"}
+  ]
+}

@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.compiler }} / ${{ matrix.build_type }}${{ matrix.sanitizers == 'ON' && ' / sanitizers' || '' }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { compiler: gcc,   cc: gcc,   cxx: g++,     build_type: Release, sanitizers: OFF }
+          - { compiler: clang, cc: clang, cxx: clang++, build_type: Release, sanitizers: OFF }
+          - { compiler: gcc,   cc: gcc,   cxx: g++,     build_type: Debug,   sanitizers: ON }
+
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libssl-dev libomp-dev
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DBZ_ENABLE_SANITIZERS=${{ matrix.sanitizers }}
+          -DBZ_WARNINGS_AS_ERRORS=ON
+          -DBZ_FETCH_NEU=OFF
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  format:
+    name: clang-format
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check formatting
+        run: >
+          find core app tests -name '*.cpp' -o -name '*.hpp'
+          | xargs clang-format-18 --dry-run --Werror

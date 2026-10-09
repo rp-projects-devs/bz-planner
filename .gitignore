@@ -1,0 +1,20 @@
+# Build trees
+/build/
+/build-*/
+/cmake-build-*/
+/out/
+
+# Runtime data: NEU repository and API caches (downloaded on demand)
+/data/
+
+# Tooling
+compile_commands.json
+.cache/
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Python reference implementation
+__pycache__/
+*.pyc
