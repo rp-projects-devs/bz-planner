@@ -10,9 +10,7 @@ namespace bz {
 CostTable compute_min_costs([[maybe_unused]] const Catalog& catalog,
                             [[maybe_unused]] const PricingConfig& pricing,
                             [[maybe_unused]] int max_iterations) {
-    for (const Recipe& recipe : catalog.recipes()) {
-        /* code */
-    }
+    throw std::logic_error("bz::best_paths is not implemented yet");
 }
 
 // TODO(v1): expand the target's recipes recursively, keeping only the top_k

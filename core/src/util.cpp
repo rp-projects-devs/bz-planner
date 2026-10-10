@@ -94,8 +94,12 @@ std::string read_text_file(const std::filesystem::path& path) {
     if (!file) {
         throw std::runtime_error("cannot open file: " + path.string());
     }
-    std::string content{std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{}};
-    if (file.bad()) {
+
+    // Allocate once and read in a single call instead of growing the string per character.
+    std::string content;
+    content.resize(std::filesystem::file_size(path));
+    file.read(content.data(), static_cast<std::streamsize>(content.size()));
+    if (file.bad() || static_cast<std::size_t>(file.gcount()) != content.size()) {
         throw std::runtime_error("cannot read file: " + path.string());
     }
     return content;
