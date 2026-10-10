@@ -1,6 +1,7 @@
 /**
  * @file bazaar.hpp
- * @brief Parsing of the Hypixel Bazaar API response (`/v2/skyblock/bazaar`).
+ * @brief Parsing of the Hypixel Bazaar API response (`/v2/skyblock/bazaar`) and its compact
+ *        on-disk form.
  *
  * This module never performs network access: callers provide the response body.
  */
@@ -40,5 +41,18 @@ struct BazaarSnapshot {
  *         reports `"success": false`.
  */
 [[nodiscard]] BazaarSnapshot parse_bazaar(std::string_view json_text);
+
+/**
+ * @brief Serializes a snapshot in the API format, keeping only the fields the library uses.
+ *
+ * The full API response weighs several megabytes, mostly order books that are never read.
+ * The output keeps `success`, `lastUpdated` and, per product, the four `quick_status` fields
+ * of MarketData, so it is a few hundred kilobytes and parse_bazaar() reads it back unchanged:
+ * `parse_bazaar(serialize_bazaar(s))` yields a snapshot equal to `s`.
+ *
+ * @param snapshot Snapshot to serialize.
+ * @return Compact JSON text.
+ */
+[[nodiscard]] std::string serialize_bazaar(const BazaarSnapshot& snapshot);
 
 } // namespace bz

@@ -14,7 +14,7 @@ order slots, budget and the market's liquidity.
 ## Features
 
 - **Automatic data import**: recipes from the [NotEnoughUpdates repository][neu], live prices from
-  the public Hypixel Bazaar API with a local cache.
+  the public Hypixel Bazaar API, cached locally by `bz update` in a compact form.
 - **Item graph**: crafting table recipes, linked in both directions ("what is X made of" /
   "what uses X"), cycles included. Only Bazaar prices are used: NPC shop offers, forge recipes
   and other acquisition methods are ignored, exactly like the Python reference.
@@ -54,7 +54,7 @@ cmake --build build --target neu-update
 ## Usage
 
 ```sh
-bz update                                   # download fresh Bazaar prices
+bz update                                   # download fresh Bazaar prices (only network access)
 bz item ENCHANTED_COCOA                     # prices, recipe tree and ranked craft paths
 bz plan ENCHANTED_COCOA --slots 21 --budget 50m --liquidity 10
 bz plan ENCHANTED_COCOA --budget 50m        # budget only; 21 slots if no limit at all
@@ -68,7 +68,7 @@ Global options apply to every command and go before it:
 | `--buy MODE`      | `order`  | `instant` or `order` for ingredients           |
 | `--sell MODE`     | `offer`  | `instant` or `offer` for the crafted item      |
 | `--tax RATE`      | `0`      | Bazaar sales tax, as a fraction (in game: `0.0125`) |
-| `--cache-age SEC` | `60`     | Age after which cached prices are refreshed    |
+| `--cache-age SEC` | `600`    | Warn when cached prices are older than this    |
 | `--data-dir DIR`  | `data/`  | Location of NEU data and caches                |
 | `--no-color`      |          | Plain output (the `NO_COLOR` variable also works) |
 

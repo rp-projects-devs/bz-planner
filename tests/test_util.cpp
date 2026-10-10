@@ -4,6 +4,7 @@
 #include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <filesystem>
 #include <optional>
 #include <string_view>
 
@@ -45,4 +46,20 @@ TEST_CASE("parse_coins rejects invalid amounts", "[util]") {
     const std::string_view text = GENERATE("", "   ", "m", "abc", "5x", "-5m", "5mm", "1e400");
     CAPTURE(text);
     CHECK_FALSE(bz::parse_coins(text).has_value());
+}
+
+TEST_CASE("write_text_file replaces content and creates directories", "[util]") {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "bz_planner_test_write";
+    const fs::path file = dir / "nested" / "out.txt";
+    fs::remove_all(dir);
+
+    bz::write_text_file(file, "first");
+    CHECK(bz::read_text_file(file) == "first");
+
+    bz::write_text_file(file, "second, longer content");
+    CHECK(bz::read_text_file(file) == "second, longer content");
+    CHECK_FALSE(fs::exists(file.string() + ".tmp"));
+
+    fs::remove_all(dir);
 }

@@ -65,7 +65,8 @@ int main(int argc, char** argv) {
     app.add_option("--tax", global.pricing.tax_rate, "Bazaar sales tax as a fraction")
         ->check(CLI::Range(0.0, 0.5))
         ->capture_default_str();
-    app.add_option("--cache-age", cache_seconds, "Seconds before cached prices are refreshed")
+    app.add_option("--cache-age", cache_seconds,
+                   "Warn when cached prices are older than this, in seconds")
         ->check(CLI::NonNegativeNumber)
         ->capture_default_str();
     app.add_flag("--no-color", no_color, "Disable colored output (also honors NO_COLOR)");

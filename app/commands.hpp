@@ -21,10 +21,10 @@ namespace bz::app {
 
 /// Options shared by every command.
 struct GlobalOptions {
-    std::filesystem::path data_dir;         ///< Holds `neu/` and `cache/`.
-    PricingConfig pricing;                  ///< Trading strategy.
-    std::chrono::seconds cache_max_age{60}; ///< Bazaar cache freshness.
-    Style style;                            ///< Output styling.
+    std::filesystem::path data_dir;          ///< Holds `neu/` and `cache/`.
+    PricingConfig pricing;                   ///< Trading strategy.
+    std::chrono::seconds cache_max_age{600}; ///< Age beyond which cached prices trigger a warning.
+    Style style;                             ///< Output styling.
 };
 
 /// Options of `bz scan`.
@@ -55,7 +55,8 @@ int run_item(const GlobalOptions& global, const ItemOptions& options);
 /// Builds an execution plan for the best craft path of an item.
 int run_plan(const GlobalOptions& global, const PlanOptions& options);
 
-/// Downloads fresh Bazaar data and reports the state of local data.
+/// Downloads fresh Bazaar prices, caches them and reports the state of local data.
+/// This is the only command that accesses the network.
 int run_update(const GlobalOptions& global);
 
 } // namespace bz::app

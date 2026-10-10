@@ -65,4 +65,20 @@ BazaarSnapshot parse_bazaar(std::string_view json_text) {
     return snapshot;
 }
 
+std::string serialize_bazaar(const BazaarSnapshot& snapshot) {
+    json products = json::object();
+    for (const BazaarProduct& product : snapshot.products) {
+        products[product.id] = {{"quick_status",
+                                 {{"buyPrice", product.market.buy_price},
+                                  {"sellPrice", product.market.sell_price},
+                                  {"buyMovingWeek", product.market.buy_moving_week},
+                                  {"sellMovingWeek", product.market.sell_moving_week}}}};
+    }
+
+    const json document = {{"success", true},
+                           {"lastUpdated", snapshot.last_updated_ms},
+                           {"products", std::move(products)}};
+    return document.dump();
+}
+
 } // namespace bz

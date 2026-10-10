@@ -128,6 +128,23 @@ TEST_CASE("parse_bazaar rejects malformed responses", "[bazaar]") {
     CHECK_THROWS_AS(bz::parse_bazaar(R"({"success": false, "products": {}})"), std::runtime_error);
 }
 
+TEST_CASE("serialize_bazaar round-trips through parse_bazaar", "[bazaar]") {
+    const std::string full = bz::read_text_file(kFixtures / "bazaar.json");
+    const auto original = bz::parse_bazaar(full);
+
+    const std::string compact = bz::serialize_bazaar(original);
+    const auto restored = bz::parse_bazaar(compact);
+
+    CHECK(compact.size() < full.size());
+    CHECK(restored.last_updated_ms == original.last_updated_ms);
+    REQUIRE(restored.products.size() == original.products.size());
+    for (std::size_t i = 0; i < original.products.size(); ++i) {
+        CAPTURE(original.products[i].id);
+        CHECK(restored.products[i].id == original.products[i].id);
+        CHECK(restored.products[i].market == original.products[i].market);
+    }
+}
+
 TEST_CASE("Catalog links recipes in both directions", "[catalog]") {
     const bz::Catalog catalog = fixture_catalog();
 

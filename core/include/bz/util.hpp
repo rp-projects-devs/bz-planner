@@ -48,4 +48,16 @@ namespace bz {
  */
 [[nodiscard]] std::string read_text_file(const std::filesystem::path& path);
 
+/**
+ * @brief Replaces a file's content atomically.
+ *
+ * The content is written to `<path>.tmp`, then renamed over @p path, so readers never observe
+ * a partially written file. Missing parent directories are created.
+ *
+ * @param path File to write.
+ * @param content New content.
+ * @throws std::runtime_error If the file cannot be written.
+ */
+void write_text_file(const std::filesystem::path& path, std::string_view content);
+
 } // namespace bz

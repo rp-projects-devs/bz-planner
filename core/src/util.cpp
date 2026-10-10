@@ -105,4 +105,23 @@ std::string read_text_file(const std::filesystem::path& path) {
     return content;
 }
 
+void write_text_file(const std::filesystem::path& path, std::string_view content) {
+    namespace fs = std::filesystem;
+    if (path.has_parent_path()) {
+        fs::create_directories(path.parent_path());
+    }
+
+    fs::path temporary = path;
+    temporary += ".tmp";
+    {
+        std::ofstream output{temporary, std::ios::binary | std::ios::trunc};
+        output.write(content.data(), static_cast<std::streamsize>(content.size()));
+        output.close();
+        if (!output) {
+            throw std::runtime_error("cannot write file: " + temporary.string());
+        }
+    }
+    fs::rename(temporary, path);
+}
+
 } // namespace bz

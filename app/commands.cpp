@@ -5,7 +5,10 @@
 #include "bz/bazaar.hpp"
 #include "bz/catalog.hpp"
 #include "bz/neu.hpp"
+#include "bz/util.hpp"
 
+#include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -20,21 +23,35 @@ std::filesystem::path neu_items_dir(const GlobalOptions& global) {
     return global.data_dir / "neu" / "items";
 }
 
+/// Compact copy of the last Bazaar response, written by `bz update` (see serialize_bazaar()).
 std::filesystem::path bazaar_cache_file(const GlobalOptions& global) {
-    return global.data_dir / "cache" / "bazaar.json";
+    return global.data_dir / "cache" / "bazaar-prices.json";
 }
 
-BazaarSnapshot load_bazaar(const GlobalOptions& global, bool force_refresh) {
-    const BazaarPayload payload =
-        load_bazaar_json(bazaar_cache_file(global), global.cache_max_age, force_refresh);
-    if (payload.stale) {
-        std::cerr << "warning: Bazaar API unreachable, using stale cached prices\n";
+/// Reads the cached prices without any network access.
+BazaarSnapshot load_cached_bazaar(const GlobalOptions& global) {
+    const std::filesystem::path file = bazaar_cache_file(global);
+    if (!std::filesystem::exists(file)) {
+        throw std::runtime_error("no cached Bazaar prices in " + file.string() +
+                                 ", run 'bz update' first");
     }
-    return parse_bazaar(payload.json);
+    BazaarSnapshot snapshot = parse_bazaar(read_text_file(file));
+
+    if (snapshot.last_updated_ms > 0) {
+        const std::int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                        std::chrono::system_clock::now().time_since_epoch())
+                                        .count();
+        const std::chrono::seconds age{(now_ms - snapshot.last_updated_ms) / 1000};
+        if (age > global.cache_max_age) {
+            std::cerr << "warning: cached prices are " << age.count() / 60
+                      << " min old, run 'bz update' to refresh\n";
+        }
+    }
+    return snapshot;
 }
 
 Catalog load_catalog(const GlobalOptions& global) {
-    const BazaarSnapshot bazaar = load_bazaar(global, /*force_refresh=*/false);
+    const BazaarSnapshot bazaar = load_cached_bazaar(global);
     const NeuLoadResult neu = load_neu_recipes(neu_items_dir(global));
     return Catalog::build(bazaar, neu.recipes);
 }
@@ -103,8 +120,12 @@ int run_plan(const GlobalOptions& global, const PlanOptions& options) {
 }
 
 int run_update(const GlobalOptions& global) {
-    const BazaarSnapshot bazaar = load_bazaar(global, /*force_refresh=*/true);
-    std::cout << "Bazaar: " << bazaar.products.size() << " products\n";
+    // The only network access of the program. The full response is parsed once and only
+    // the fields in use are cached, so other commands read a much smaller file.
+    const BazaarSnapshot bazaar = parse_bazaar(fetch_bazaar_json());
+    write_text_file(bazaar_cache_file(global), serialize_bazaar(bazaar));
+    std::cout << "Bazaar: " << bazaar.products.size() << " products, saved to "
+              << bazaar_cache_file(global).string() << '\n';
 
     if (!std::filesystem::is_directory(neu_items_dir(global))) {
         std::cout << "NEU:    missing\n";
