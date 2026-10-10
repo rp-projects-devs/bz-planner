@@ -43,11 +43,11 @@ std::string signed_coins(double coins, const Style& style, std::size_t width = 0
 }
 
 std::string price_tag(const Item& item, const PricingConfig& pricing, const Style& style) {
-    const auto cost = unit_buy_cost(item, pricing.buy);
-    const auto revenue = unit_sell_revenue(item, pricing.sell, pricing.tax_rate);
-    if (!cost && !revenue) {
+    if (!item.market) {
         return paint("[not on Bazaar]", Color::Dim, style);
     }
+    const auto cost = unit_buy_cost(item, pricing.buy);
+    const auto revenue = unit_sell_revenue(item, pricing.sell, pricing.tax_rate);
     return paint(std::format("[buy {} | sell {}]", cost ? format_coins(*cost) : "-",
                              revenue ? format_coins(*revenue) : "-"),
                  Color::Dim, style);
@@ -74,20 +74,15 @@ void print_tree_level(std::ostream& out, const Catalog& catalog, ItemIndex item,
     for (std::size_t r = 0; r < recipes.size(); ++r) {
         const Recipe& recipe = catalog.recipe(recipes[r]);
         const bool last_recipe = r + 1 == recipes.size();
-        const std::string_view kind = recipe.kind == RecipeKind::Crafting ? "craft" : "npc shop";
 
         out << prefix << (last_recipe ? "└── " : "├── ")
-            << paint(std::format("{} (yields {})", kind, recipe.output_count), Color::Yellow, style)
+            << paint(std::format("craft (yields {})", recipe.output_count), Color::Yellow, style)
             << '\n';
 
         const std::string child_prefix = prefix + (last_recipe ? "    " : "│   ");
-        const std::size_t lines = recipe.ingredients.size() + (recipe.coin_cost > 0.0 ? 1 : 0);
+        const std::size_t lines = recipe.ingredients.size();
         std::size_t line = 0;
 
-        if (recipe.coin_cost > 0.0) {
-            out << child_prefix << (++line == lines ? "└── " : "├── ")
-                << format_coins(recipe.coin_cost) << " coins\n";
-        }
         for (const Ingredient& ingredient : recipe.ingredients) {
             const bool last = ++line == lines;
             const Item& child = catalog.item(ingredient.item);
@@ -181,9 +176,6 @@ void print_paths(std::ostream& out, const Catalog& catalog, std::span<const Craf
         for (const Purchase& purchase : path.purchases) {
             out << std::format("    {:>10.2f} × {}\n", purchase.amount,
                                catalog.item(purchase.item).id);
-        }
-        if (path.coin_cost > 0.0) {
-            out << std::format("    {:>10} coins (NPC)\n", format_coins(path.coin_cost));
         }
     }
 }

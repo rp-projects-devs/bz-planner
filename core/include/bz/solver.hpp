@@ -35,8 +35,7 @@ struct Purchase {
 struct CraftPath {
     std::vector<Purchase> purchases; ///< Merged per item, sorted by item index.
     std::vector<RecipeIndex> steps;  ///< Recipes executed, from the target downwards.
-    double coin_cost = 0.0;          ///< NPC coins spent per crafted unit.
-    double unit_cost = 0.0;          ///< Total cost per crafted unit under the PricingConfig.
+    double unit_cost = 0.0;          ///< Bazaar cost per crafted unit under the PricingConfig.
 };
 
 /// Limits of the path enumeration.
@@ -48,9 +47,10 @@ struct PathOptions {
 /**
  * @brief Computes the cheapest acquisition cost of every item.
  *
- * An item costs the minimum of its Bazaar buy price and, for each recipe, the cost of its
- * ingredients plus coins, divided by the output count. Because the graph may be cyclic, costs
- * are relaxed until a fixed point is reached or @p max_iterations passes have run.
+ * An item costs the minimum of its Bazaar buy price and, for each crafting recipe, the cost
+ * of its ingredients divided by the output count. Only Bazaar prices are used: an item that
+ * is neither on the Bazaar nor craftable from Bazaar items is unobtainable. Because the graph may
+ * be cyclic, costs are relaxed until a fixed point is reached or @p max_iterations passes have run.
  *
  * @param catalog Item graph.
  * @param pricing Trading strategy; only PricingConfig::buy is used.

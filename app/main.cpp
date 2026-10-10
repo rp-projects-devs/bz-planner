@@ -96,15 +96,15 @@ int main(int argc, char** argv) {
 
     // bz plan <ID>
     bz::app::PlanOptions plan_options;
-    int slots = bz::kDefaultOrderSlots;
+    std::optional<int> slots;
     std::optional<std::string> budget;
     std::optional<double> liquidity_percent;
     CLI::App* plan =
         app.add_subcommand("plan", "Size a craft under slot, budget and volume limits");
     plan->add_option("id", plan_options.id, "Item id (e.g. ENCHANTED_COCOA)")->required();
-    plan->add_option("--slots", slots, "Bazaar order slots available")
-        ->check(CLI::Range(1, 100))
-        ->capture_default_str();
+    plan->add_option("--slots", slots,
+                     "Bazaar order slots available (21 if no limit is given at all)")
+        ->check(CLI::Range(1, 100));
     plan->add_option("--budget", budget, "Coins available (e.g. 50m)")->check(kCoinAmount);
     plan->add_option("--liquidity", liquidity_percent,
                      "Max share of the item's weekly volume, in percent")
@@ -124,12 +124,16 @@ int main(int argc, char** argv) {
     if (max_cost) {
         scan_options.filters.max_unit_cost = bz::parse_coins(*max_cost);
     }
+    // Like the reference, each limit is optional: a budget alone must not be capped by slots.
     plan_options.constraints.order_slots = slots;
     if (budget) {
         plan_options.constraints.budget = bz::parse_coins(*budget);
     }
     if (liquidity_percent) {
         plan_options.constraints.liquidity_share = *liquidity_percent / 100.0;
+    }
+    if (!slots && !budget && !liquidity_percent) {
+        plan_options.constraints.order_slots = bz::kDefaultOrderSlots;
     }
 
     try {

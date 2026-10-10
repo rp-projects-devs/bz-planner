@@ -15,10 +15,11 @@ order slots, budget and the market's liquidity.
 
 - **Automatic data import**: recipes from the [NotEnoughUpdates repository][neu], live prices from
   the public Hypixel Bazaar API with a local cache.
-- **Item graph**: crafting recipes and coin-priced NPC shop offers, linked in both directions
-  ("what is X made of" / "what uses X"), cycles included.
+- **Item graph**: crafting table recipes, linked in both directions ("what is X made of" /
+  "what uses X"), cycles included. Only Bazaar prices are used: NPC shop offers, forge recipes
+  and other acquisition methods are ignored, exactly like the Python reference.
 - **Trading strategies**: buy ingredients instantly or with buy orders, sell instantly or with sell
-  offers, with the Bazaar sales tax applied.
+  offers, with an optional Bazaar sales tax.
 - **Constrained planning**: the largest quantity you can craft within your order slots, budget and
   a share of the item's weekly volume, with an order-by-order breakdown.
 - **Global scan**: the most profitable crafts across the whole Bazaar, parallelized with OpenMP.
@@ -56,6 +57,7 @@ cmake --build build --target neu-update
 bz update                                   # download fresh Bazaar prices
 bz item ENCHANTED_COCOA                     # prices, recipe tree and ranked craft paths
 bz plan ENCHANTED_COCOA --slots 21 --budget 50m --liquidity 10
+bz plan ENCHANTED_COCOA --budget 50m        # budget only; 21 slots if no limit at all
 bz scan --min-volume 500000 --min-margin 5 --top 20
 ```
 
@@ -65,7 +67,7 @@ Global options apply to every command and go before it:
 |-------------------|----------|------------------------------------------------|
 | `--buy MODE`      | `order`  | `instant` or `order` for ingredients           |
 | `--sell MODE`     | `offer`  | `instant` or `offer` for the crafted item      |
-| `--tax RATE`      | `0.0125` | Bazaar sales tax, as a fraction                |
+| `--tax RATE`      | `0`      | Bazaar sales tax, as a fraction (in game: `0.0125`) |
 | `--cache-age SEC` | `60`     | Age after which cached prices are refreshed    |
 | `--data-dir DIR`  | `data/`  | Location of NEU data and caches                |
 | `--no-color`      |          | Plain output (the `NO_COLOR` variable also works) |
@@ -82,6 +84,9 @@ The Hypixel API names prices from the order book's point of view, which is easy 
 | Buy order      | highest buy order                | `sellPrice` |
 | Instant sell   | highest buy order, minus tax     | `sellPrice` |
 | Sell offer     | lowest sell offer, minus tax     | `buyPrice`  |
+
+The defaults (`--buy order --sell offer --tax 0`) reproduce the Python reference, whose
+`"buy"` side reads `sellPrice` and `"sell"` side reads `buyPrice`, without tax.
 
 ## Project layout
 
@@ -128,7 +133,8 @@ formatting on every push and pull request.
 ## Roadmap
 
 **v1**
-- [x] NEU and Bazaar import, item graph, pricing modes and tax, CLI
+- [x] NEU and Bazaar import (crafting recipes only, checked against the Python reference on the
+      full NEU repository), item graph, pricing modes and tax, CLI
 - [ ] Minimal acquisition cost of every item (fixed-point relaxation over a cyclic graph)
 - [ ] Ranked craft paths with top-k pruning
 - [ ] Constrained planner: order slots, budget, liquidity, order breakdown

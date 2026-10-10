@@ -43,17 +43,20 @@ BazaarSnapshot parse_bazaar(std::string_view json_text) {
     snapshot.last_updated_ms = integer_field(document, "lastUpdated");
     snapshot.products.reserve(products->size());
 
+    const json empty_status = json::object();
     for (const auto& [product_id, product] : products->items()) {
-        const auto status = product.find("quick_status");
-        if (status == product.end() || !status->is_object()) {
+        std::string id = normalize_item_id(product_id);
+        if (id.empty()) {
             continue;
         }
+        const auto found = product.is_object() ? product.find("quick_status") : product.end();
+        const json& status = (found != product.end() && found->is_object()) ? *found : empty_status;
         snapshot.products.push_back(BazaarProduct{
-            .id = normalize_item_id(product_id),
-            .market = MarketData{.buy_price = number_field(*status, "buyPrice"),
-                                 .sell_price = number_field(*status, "sellPrice"),
-                                 .buy_moving_week = integer_field(*status, "buyMovingWeek"),
-                                 .sell_moving_week = integer_field(*status, "sellMovingWeek")},
+            .id = std::move(id),
+            .market = MarketData{.buy_price = number_field(status, "buyPrice"),
+                                 .sell_price = number_field(status, "sellPrice"),
+                                 .buy_moving_week = integer_field(status, "buyMovingWeek"),
+                                 .sell_moving_week = integer_field(status, "sellMovingWeek")},
         });
     }
 

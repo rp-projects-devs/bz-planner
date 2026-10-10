@@ -29,14 +29,20 @@ enum class SellMode {
     Offer,   ///< Place a sell offer and wait for it to fill.
 };
 
-/// Default Bazaar tax applied to sales (1.25 %).
-inline constexpr double kDefaultBazaarTax = 0.0125;
+/// In-game Bazaar sales tax (1.25 %), to pass explicitly with `--tax`.
+inline constexpr double kBazaarTax = 0.0125;
 
-/// Trading strategy used for every cost and revenue computation.
+/**
+ * @brief Trading strategy used for every cost and revenue computation.
+ *
+ * The defaults reproduce the Python reference exactly: buy orders for ingredients
+ * (`price_type="buy"` → `sellPrice`), sell offers for the output (`price_type="sell"` →
+ * `buyPrice`) and no tax.
+ */
 struct PricingConfig {
-    BuyMode buy = BuyMode::Order;        ///< Ingredient side.
-    SellMode sell = SellMode::Offer;     ///< Output side.
-    double tax_rate = kDefaultBazaarTax; ///< Fraction of revenue lost on sales, in [0, 1).
+    BuyMode buy = BuyMode::Order;    ///< Ingredient side.
+    SellMode sell = SellMode::Offer; ///< Output side.
+    double tax_rate = 0.0;           ///< Fraction of revenue lost on sales, in [0, 1).
 };
 
 /**

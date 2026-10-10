@@ -42,32 +42,28 @@ struct MarketData {
     friend bool operator==(const MarketData&, const MarketData&) = default;
 };
 
-/// In-game mechanism used to execute a recipe.
-enum class RecipeKind {
-    Crafting, ///< Crafting table.
-    NpcShop,  ///< Purchase from an NPC merchant.
-};
-
 /// One input of a recipe.
 struct Ingredient {
     ItemIndex item = 0;     ///< Consumed item.
-    std::int64_t count = 0; ///< Units consumed per execution of the recipe.
+    std::int64_t count = 0; ///< Units consumed per craft.
 
     friend bool operator==(const Ingredient&, const Ingredient&) = default;
 };
 
 /**
- * @brief A way to obtain an item from other items and/or coins.
+ * @brief A crafting table recipe: a way to obtain an item from other items.
+ *
+ * Only crafting grids are modeled, like the Python reference: NPC shop offers, forge
+ * recipes and every other acquisition method are never part of the item graph, so no
+ * NPC price can leak into a cost.
  *
  * Ingredients are merged per item and sorted by item index once stored in a Catalog,
  * so two equivalent recipes always compare equal.
  */
 struct Recipe {
-    RecipeKind kind = RecipeKind::Crafting; ///< Execution mechanism.
-    ItemIndex output = 0;                   ///< Produced item.
-    std::int64_t output_count = 1;          ///< Units produced per execution.
-    std::vector<Ingredient> ingredients;    ///< Item inputs.
-    double coin_cost = 0.0;                 ///< Coins paid per execution (NPC shops).
+    ItemIndex output = 0;                ///< Produced item.
+    std::int64_t output_count = 1;       ///< Units produced per craft.
+    std::vector<Ingredient> ingredients; ///< Item inputs.
 
     friend bool operator==(const Recipe&, const Recipe&) = default;
 };

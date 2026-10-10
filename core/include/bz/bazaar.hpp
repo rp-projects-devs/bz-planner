@@ -30,7 +30,9 @@ struct BazaarSnapshot {
 /**
  * @brief Parses the body of a Bazaar API response.
  *
- * Products without a `quick_status` object are skipped; missing numeric fields default to 0.
+ * Like the Python reference, every product becomes a Bazaar item. A product without
+ * `quick_status` keeps zero prices, so pricing.hpp reports no price for it; missing numeric
+ * fields default to 0.
  *
  * @param json_text Response body.
  * @return The parsed snapshot.

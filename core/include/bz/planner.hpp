@@ -18,7 +18,7 @@ namespace bz {
 /// Limits applied when sizing a plan. Unset limits are ignored.
 struct Constraints {
     std::optional<int> order_slots;        ///< Bazaar orders available for ingredients.
-    std::optional<double> budget;          ///< Coins available for ingredients and NPC costs.
+    std::optional<double> budget;          ///< Coins available for Bazaar ingredients.
     std::optional<double> liquidity_share; ///< Max share, in (0, 1], of the target's weekly
                                            ///< bought volume (MarketData::buy_moving_week).
 };
@@ -43,7 +43,7 @@ struct OrderLine {
 struct Plan {
     std::int64_t quantity = 0;         ///< Units of the target to craft.
     int slots_used = 0;                ///< Bazaar orders needed.
-    double total_cost = 0.0;           ///< Ingredients and NPC coins.
+    double total_cost = 0.0;           ///< Bazaar cost of the ingredients.
     double total_revenue = 0.0;        ///< Sale of the crafted units, after tax.
     double profit = 0.0;               ///< total_revenue − total_cost.
     std::vector<Limit> binding_limits; ///< Constraints blocking quantity + 1.

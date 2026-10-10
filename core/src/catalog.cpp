@@ -10,7 +10,8 @@ namespace bz {
 
 namespace {
 
-/// Merges duplicate ingredients and sorts them so equivalent recipes compare equal.
+/// Merges duplicate ingredients and sorts them so equivalent recipes compare
+/// equal.
 void canonicalize(std::vector<Ingredient>& ingredients) {
     std::sort(ingredients.begin(), ingredients.end(),
               [](const Ingredient& a, const Ingredient& b) { return a.item < b.item; });
@@ -38,10 +39,8 @@ Catalog Catalog::build(const BazaarSnapshot& bazaar, const std::vector<NeuRecipe
 
     for (const NeuRecipe& source : recipes) {
         Recipe recipe;
-        recipe.kind = source.kind;
         recipe.output = catalog.intern(source.output);
         recipe.output_count = source.output_count;
-        recipe.coin_cost = source.coin_cost;
         recipe.ingredients.reserve(source.ingredients.size());
         for (const ItemCount& ingredient : source.ingredients) {
             recipe.ingredients.push_back({catalog.intern(ingredient.id), ingredient.count});

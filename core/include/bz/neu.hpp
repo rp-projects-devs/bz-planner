@@ -1,9 +1,10 @@
 /**
  * @file neu.hpp
- * @brief Loading of crafting and NPC shop recipes from the NotEnoughUpdates item repository.
+ * @brief Loading of crafting table recipes from the NotEnoughUpdates item repository.
  *
- * Only recipes that can be priced in coins are kept: crafting table recipes and NPC shop
- * offers. Forge, Kat upgrades, trades and mob drops are ignored.
+ * Mirrors `SkyblockDataEngine.load_recipes()` of the Python reference: only the 3×3 crafting
+ * grid (`A1`…`C3`) is read. NPC shop offers (and their coin costs), forge recipes, Kat
+ * upgrades, trades and mob drops are ignored, so NPC prices never enter a calculation.
  */
 #pragma once
 
@@ -19,9 +20,6 @@
 
 namespace bz {
 
-/// NEU id of the coin currency in NPC shop costs.
-inline constexpr std::string_view kCoinId = "SKYBLOCK_COIN";
-
 /// An item id with a quantity, as written in NEU files (`ENCHANTED_COCOA:32`).
 struct ItemCount {
     std::string id;         ///< Normalized item id.
@@ -30,13 +28,11 @@ struct ItemCount {
     friend bool operator==(const ItemCount&, const ItemCount&) = default;
 };
 
-/// A recipe as described by NEU, before item ids are resolved to catalog indices.
+/// A crafting recipe as described by NEU, before item ids are resolved to catalog indices.
 struct NeuRecipe {
-    RecipeKind kind = RecipeKind::Crafting; ///< Execution mechanism.
-    std::string output;                     ///< Normalized id of the produced item.
-    std::int64_t output_count = 1;          ///< Units produced per execution.
-    std::vector<ItemCount> ingredients;     ///< Item inputs, merged per item.
-    double coin_cost = 0.0;                 ///< Coins paid per execution.
+    std::string output;                 ///< Normalized id of the produced item.
+    std::int64_t output_count = 1;      ///< Units produced per craft.
+    std::vector<ItemCount> ingredients; ///< Item inputs, merged per item.
 };
 
 /// Outcome of loading a whole NEU items directory.
@@ -58,11 +54,13 @@ struct NeuLoadResult {
 [[nodiscard]] std::optional<ItemCount> parse_item_count(std::string_view entry);
 
 /**
- * @brief Extracts the supported recipes of one NEU item file.
+ * @brief Extracts the crafting recipes of one NEU item file.
  *
- * Reads the `recipe` object (crafting grid) and the `recipes` array (`crafting` and
- * `npc_shop` entries). For NPC shops, `SKYBLOCK_COIN` costs become NeuRecipe::coin_cost and
- * any other cost becomes an ingredient.
+ * Reads the `recipe` object and the `crafting` entries of the `recipes` array (an entry
+ * without `type` counts as crafting). Entries of any other type (`npc_shop`, `forge`, ...)
+ * are skipped. The output is always the file's `internalname`; `count` defaults to 1 when
+ * missing, null or not positive, as `int(raw.get("count", 1) or 1)` does in the reference.
+ * A grid without any valid ingredient produces no recipe.
  *
  * @param json_text Content of the item file.
  * @return The recipes found, possibly none.

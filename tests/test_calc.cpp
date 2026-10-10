@@ -28,7 +28,6 @@ bz::BazaarProduct product(const char* id, double buy, double sell,
  * - MID  = 4 RAW               → 40 crafted vs 50 on the Bazaar
  * - TOP  = 3 MID + 1 RAW       → 130 crafted vs 200 on the Bazaar
  * - BLOCK = 9 RAW, 1 BLOCK → 9 RAW (cycle)
- * - SHARD: NPC sells 2 for 30 coins
  * - WIDGET = 1 GHOST, GHOST is unobtainable
  */
 bz::Catalog synthetic_world() {
@@ -41,7 +40,6 @@ bz::Catalog synthetic_world() {
         {.output = "TOP", .ingredients = {{"MID", 3}, {"RAW", 1}}},
         {.output = "BLOCK", .ingredients = {{"RAW", 9}}},
         {.output = "RAW", .output_count = 9, .ingredients = {{"BLOCK", 1}}},
-        {.kind = bz::RecipeKind::NpcShop, .output = "SHARD", .output_count = 2, .coin_cost = 30},
         {.output = "WIDGET", .ingredients = {{"GHOST", 1}}},
     };
     return bz::Catalog::build(bazaar, recipes);
@@ -65,6 +63,14 @@ TEST_CASE("Sell modes map to the right side of the order book and pay tax", "[pr
     const bz::MarketData market{.buy_price = 100.0, .sell_price = 80.0};
     CHECK_THAT(*bz::unit_sell_revenue(market, bz::SellMode::Instant, 0.0125), WithinRel(79.0));
     CHECK_THAT(*bz::unit_sell_revenue(market, bz::SellMode::Offer, 0.0125), WithinRel(98.75));
+}
+
+TEST_CASE("Default pricing matches the Python reference", "[pricing]") {
+    // Reference: cost_type="buy" uses sellPrice, revenue_type="sell" uses buyPrice, no tax.
+    const bz::PricingConfig defaults{};
+    const bz::MarketData market{.buy_price = 100.0, .sell_price = 80.0};
+    CHECK_THAT(*bz::unit_buy_cost(market, defaults.buy), WithinRel(80.0));
+    CHECK_THAT(*bz::unit_sell_revenue(market, defaults.sell, defaults.tax_rate), WithinRel(100.0));
 }
 
 TEST_CASE("Missing or invalid prices yield no price", "[pricing]") {
@@ -98,10 +104,6 @@ TEST_CASE("compute_min_costs picks the cheapest source and survives cycles", "[.
     const auto& top = costs[index_of(catalog, "TOP")];
     REQUIRE(top);
     CHECK_THAT(top->unit_cost, WithinAbs(130.0, 1e-9));
-
-    const auto& shard = costs[index_of(catalog, "SHARD")];
-    REQUIRE(shard);
-    CHECK_THAT(shard->unit_cost, WithinAbs(15.0, 1e-9));
 
     CHECK_FALSE(costs[index_of(catalog, "GHOST")].has_value());
     CHECK_FALSE(costs[index_of(catalog, "WIDGET")].has_value());
