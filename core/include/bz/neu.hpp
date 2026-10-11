@@ -33,13 +33,17 @@ struct NeuRecipe {
     std::string output;                 ///< Normalized id of the produced item.
     std::int64_t output_count = 1;      ///< Units produced per craft.
     std::vector<ItemCount> ingredients; ///< Item inputs, merged per item.
+
+    friend bool operator==(const NeuRecipe&, const NeuRecipe&) = default;
 };
 
 /// Outcome of loading a whole NEU items directory.
 struct NeuLoadResult {
-    std::vector<NeuRecipe> recipes; ///< Every recipe found, in file name order.
-    std::size_t files_read = 0;     ///< JSON files successfully parsed.
-    std::size_t files_skipped = 0;  ///< JSON files that could not be parsed.
+    /// Every recipe found: in file name order from load_neu_recipes(), grouped by output id
+    /// from parse_recipe_cache().
+    std::vector<NeuRecipe> recipes;
+    std::size_t files_read = 0;    ///< JSON files successfully parsed.
+    std::size_t files_skipped = 0; ///< JSON files that could not be parsed.
 };
 
 /**
@@ -78,5 +82,42 @@ struct NeuLoadResult {
  * @throws std::runtime_error If @p items_dir is not a directory.
  */
 [[nodiscard]] NeuLoadResult load_neu_recipes(const std::filesystem::path& items_dir);
+
+/**
+ * @brief Version of the recipe cache layout and of the parsing rules that produced it.
+ *
+ * Bump it whenever parse_neu_item() or the cache layout changes: caches written with another
+ * version are rejected by parse_recipe_cache(), so they get rebuilt from the NEU repository.
+ */
+inline constexpr int kRecipeCacheFormat = 1;
+
+/**
+ * @brief Serializes loaded NEU recipes into the recipe cache.
+ *
+ * Reading the cache takes a few milliseconds, against a full parse of the NEU repository for
+ * load_neu_recipes(). Recipes are grouped under their output id and ingredients are keyed by
+ * id, all keys sorted, so the file reads like a recipe book and can be searched by item id:
+ *
+ * @code{.json}
+ * {"format": 1, "files_read": 8934, "files_skipped": 0,
+ *  "recipes": {"ENCHANTED_COCOA": [{"count": 1, "ingredients": {"INK_SACK-3": 160}}]}}
+ * @endcode
+ *
+ * Ingredients come back sorted by id, which makes no difference to the catalog.
+ *
+ * @param result Recipes and load statistics, as returned by load_neu_recipes().
+ * @return Indented JSON text.
+ */
+[[nodiscard]] std::string serialize_recipe_cache(const NeuLoadResult& result);
+
+/**
+ * @brief Reads a recipe cache written by serialize_recipe_cache().
+ * @param json_text Content of the cache file.
+ * @return The cached recipes, grouped by output id with ingredients sorted by id, and the
+ *         original load statistics.
+ * @throws std::runtime_error If the text is not a valid cache, or was written with another
+ *         kRecipeCacheFormat.
+ */
+[[nodiscard]] NeuLoadResult parse_recipe_cache(std::string_view json_text);
 
 } // namespace bz

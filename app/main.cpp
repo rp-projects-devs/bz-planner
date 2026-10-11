@@ -115,6 +115,9 @@ int main(int argc, char** argv) {
     // bz update
     CLI::App* update = app.add_subcommand("update", "Download fresh Bazaar prices");
 
+    CLI::App* neu_cache =
+        app.add_subcommand("neu-cache", "Rebuild the recipe cache from the NEU repository");
+
     CLI11_PARSE(app, argc, argv);
 
     global.data_dir = data_dir;
@@ -149,6 +152,9 @@ int main(int argc, char** argv) {
         }
         if (*update) {
             return bz::app::run_update(global);
+        }
+        if (*neu_cache) {
+            return bz::app::run_neu_cache(global);
         }
     } catch (const std::exception& error) {
         std::cerr << "error: " << error.what() << '\n';

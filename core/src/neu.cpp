@@ -211,4 +211,63 @@ NeuLoadResult load_neu_recipes(const std::filesystem::path& items_dir) {
     return result;
 }
 
+std::string serialize_recipe_cache(const NeuLoadResult& result) {
+    json recipes = json::object();
+    for (const NeuRecipe& recipe : result.recipes) {
+        json ingredients = json::object();
+        for (const ItemCount& ingredient : recipe.ingredients) {
+            ingredients[ingredient.id] = ingredient.count;
+        }
+        recipes[recipe.output].push_back(
+            {{"count", recipe.output_count}, {"ingredients", std::move(ingredients)}});
+    }
+
+    const json document = {{"format", kRecipeCacheFormat},
+                           {"files_read", result.files_read},
+                           {"files_skipped", result.files_skipped},
+                           {"recipes", std::move(recipes)}};
+    return document.dump(1);
+}
+
+NeuLoadResult parse_recipe_cache(std::string_view json_text) {
+    const json document = json::parse(json_text, nullptr, /*allow_exceptions=*/false);
+    if (document.is_discarded() || !document.is_object()) {
+        throw std::runtime_error("recipe cache is not a JSON object");
+    }
+
+    try {
+        if (document.at("format").get<int>() != kRecipeCacheFormat) {
+            throw std::runtime_error("recipe cache was written by another version");
+        }
+
+        NeuLoadResult result;
+        result.files_read = document.at("files_read").get<std::size_t>();
+        result.files_skipped = document.at("files_skipped").get<std::size_t>();
+
+        for (const auto& [output, recipes] : document.at("recipes").items()) {
+            for (const json& node : recipes) {
+                NeuRecipe recipe;
+                recipe.output = output;
+                recipe.output_count = node.at("count").get<std::int64_t>();
+                for (const auto& [id, count] : node.at("ingredients").items()) {
+                    recipe.ingredients.push_back({id, count.get<std::int64_t>()});
+                }
+                const bool valid =
+                    !recipe.output.empty() && recipe.output_count > 0 &&
+                    !recipe.ingredients.empty() &&
+                    std::ranges::all_of(recipe.ingredients, [](const ItemCount& ingredient) {
+                        return !ingredient.id.empty() && ingredient.count > 0;
+                    });
+                if (!valid) {
+                    throw std::runtime_error("recipe cache holds an invalid recipe for " + output);
+                }
+                result.recipes.push_back(std::move(recipe));
+            }
+        }
+        return result;
+    } catch (const json::exception& error) {
+        throw std::runtime_error(std::string{"recipe cache is malformed: "} + error.what());
+    }
+}
+
 } // namespace bz

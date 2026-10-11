@@ -14,7 +14,8 @@ order slots, budget and the market's liquidity.
 ## Features
 
 - **Automatic data import**: recipes from the [NotEnoughUpdates repository][neu], live prices from
-  the public Hypixel Bazaar API, cached locally by `bz update` in a compact form.
+  the public Hypixel Bazaar API. Both are cached locally in a compact form, so a command reads
+  two small files instead of thousands of NEU files and a multi-megabyte API response.
 - **Item graph**: crafting table recipes, linked in both directions ("what is X made of" /
   "what uses X"), cycles included. Only Bazaar prices are used: NPC shop offers, forge recipes
   and other acquisition methods are ignored, exactly like the Python reference.
@@ -51,6 +52,21 @@ with:
 cmake --build build --target neu-update
 ```
 
+### Data and caches
+
+| File                            | Written by                  | Content                        |
+|---------------------------------|-----------------------------|--------------------------------|
+| `data/neu/`                     | configuration, `neu-update` | the NEU repository             |
+| `data/cache/neu-recipes.json`   | `neu-update`, `bz neu-cache`| crafting recipes, by output id |
+| `data/cache/bazaar-prices.json` | `bz update`                 | the four price fields in use   |
+
+Recipes only change with the NEU repository, so they are parsed once into
+`neu-recipes.json`: `neu-update` downloads NEU then rebuilds the cache, and every command reads
+the cache in a few milliseconds. The cache is also rebuilt automatically when it is missing,
+unreadable or written by a build with another parser version (`kRecipeCacheFormat` in
+`core/include/bz/neu.hpp`, to bump whenever the NEU parsing rules change). After editing the NEU
+files by hand, run `bz neu-cache`.
+
 ## Usage
 
 ```sh
@@ -59,6 +75,7 @@ bz item ENCHANTED_COCOA                     # prices, recipe tree and ranked cra
 bz plan ENCHANTED_COCOA --slots 21 --budget 50m --liquidity 10
 bz plan ENCHANTED_COCOA --budget 50m        # budget only; 21 slots if no limit at all
 bz scan --min-volume 500000 --min-margin 5 --top 20
+bz neu-cache                                # rebuild the recipe cache from data/neu
 ```
 
 Global options apply to every command and go before it:
@@ -94,7 +111,7 @@ The defaults (`--buy order --sell offer --tax 0`) reproduce the Python reference
 core/      bzcore library: model, data loading, pricing and algorithms (no network access)
 app/       the `bz` executable: CLI, terminal output and the HTTP client
 tests/     Catch2 unit tests and JSON fixtures
-cmake/     NEU repository download
+cmake/     NEU repository download and recipe cache refresh
 reference/ the original Python prototype, used as a test oracle
 ```
 

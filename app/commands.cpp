@@ -23,6 +23,42 @@ std::filesystem::path neu_items_dir(const GlobalOptions& global) {
     return global.data_dir / "neu" / "items";
 }
 
+/// Recipes parsed from the NEU repository (see serialize_recipe_cache()). The `neu-update`
+/// build target deletes and rebuilds this file, so keep its path in sync with FetchNeu.cmake.
+std::filesystem::path recipe_cache_file(const GlobalOptions& global) {
+    return global.data_dir / "cache" / "neu-recipes.json";
+}
+
+/// Parses the whole NEU repository and saves the result to the recipe cache.
+NeuLoadResult rebuild_recipe_cache(const GlobalOptions& global) {
+    if (!std::filesystem::is_directory(neu_items_dir(global))) {
+        throw std::runtime_error("NEU repository not found in " + neu_items_dir(global).string() +
+                                 ", run: cmake --build <build-dir> --target neu-update");
+    }
+    NeuLoadResult neu = load_neu_recipes(neu_items_dir(global));
+    write_text_file(recipe_cache_file(global), serialize_recipe_cache(neu));
+    return neu;
+}
+
+/// Reads the recipe cache, rebuilding it first if it is missing, unreadable or written by
+/// another version.
+NeuLoadResult load_recipes(const GlobalOptions& global) {
+    const std::filesystem::path file = recipe_cache_file(global);
+    if (std::filesystem::exists(file)) {
+        try {
+            return parse_recipe_cache(read_text_file(file));
+        } catch (const std::runtime_error& error) {
+            std::cerr << "warning: " << error.what() << ", rebuilding it\n";
+        }
+    }
+    return rebuild_recipe_cache(global);
+}
+
+void print_recipe_stats(const NeuLoadResult& neu) {
+    std::cout << "NEU:    " << neu.recipes.size() << " recipes from " << neu.files_read
+              << " files (" << neu.files_skipped << " skipped)\n";
+}
+
 /// Compact copy of the last Bazaar response, written by `bz update` (see serialize_bazaar()).
 std::filesystem::path bazaar_cache_file(const GlobalOptions& global) {
     return global.data_dir / "cache" / "bazaar-prices.json";
@@ -52,7 +88,7 @@ BazaarSnapshot load_cached_bazaar(const GlobalOptions& global) {
 
 Catalog load_catalog(const GlobalOptions& global) {
     const BazaarSnapshot bazaar = load_cached_bazaar(global);
-    const NeuLoadResult neu = load_neu_recipes(neu_items_dir(global));
+    const NeuLoadResult neu = load_recipes(global);
     return Catalog::build(bazaar, neu.recipes);
 }
 
@@ -127,14 +163,19 @@ int run_update(const GlobalOptions& global) {
     std::cout << "Bazaar: " << bazaar.products.size() << " products, saved to "
               << bazaar_cache_file(global).string() << '\n';
 
-    if (!std::filesystem::is_directory(neu_items_dir(global))) {
+    if (!std::filesystem::exists(recipe_cache_file(global)) &&
+        !std::filesystem::is_directory(neu_items_dir(global))) {
         std::cout << "NEU:    missing\n";
     } else {
-        const NeuLoadResult neu = load_neu_recipes(neu_items_dir(global));
-        std::cout << "NEU:    " << neu.recipes.size() << " recipes from " << neu.files_read
-                  << " files (" << neu.files_skipped << " skipped)\n";
+        print_recipe_stats(load_recipes(global));
     }
     std::cout << "NEU recipes are refreshed with: cmake --build <build-dir> --target neu-update\n";
+    return EXIT_SUCCESS;
+}
+
+int run_neu_cache(const GlobalOptions& global) {
+    print_recipe_stats(rebuild_recipe_cache(global));
+    std::cout << "Recipe cache saved to " << recipe_cache_file(global).string() << '\n';
     return EXIT_SUCCESS;
 }
 

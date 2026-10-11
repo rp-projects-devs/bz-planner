@@ -59,4 +59,7 @@ int run_plan(const GlobalOptions& global, const PlanOptions& options);
 /// This is the only command that accesses the network.
 int run_update(const GlobalOptions& global);
 
+/// Rebuilds the recipe cache from the NEU repository. Run by the `neu-update` build target.
+int run_neu_cache(const GlobalOptions& global);
+
 } // namespace bz::app

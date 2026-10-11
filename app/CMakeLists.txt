@@ -15,3 +15,8 @@ target_link_libraries(bz
         bz::warnings
         CLI11::CLI11
         httplib::httplib)
+
+# `neu-update` (cmake/FetchNeu.cmake) runs `bz neu-cache` after downloading NEU.
+if(TARGET neu-update)
+    add_dependencies(neu-update bz)
+endif()

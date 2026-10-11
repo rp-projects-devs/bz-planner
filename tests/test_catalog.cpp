@@ -8,12 +8,32 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <filesystem>
 #include <stdexcept>
+#include <string>
+#include <tuple>
+#include <vector>
 
 using Catch::Matchers::WithinRel;
 
 namespace {
 
 const std::filesystem::path kFixtures{BZ_FIXTURES_DIR};
+
+/// Sorts recipes and their ingredients, so recipe lists can be compared regardless of order.
+std::vector<bz::NeuRecipe> sorted(std::vector<bz::NeuRecipe> recipes) {
+    for (bz::NeuRecipe& recipe : recipes) {
+        std::ranges::sort(recipe.ingredients, {}, &bz::ItemCount::id);
+    }
+    const auto key = [](const bz::ItemCount& ingredient) {
+        return std::tie(ingredient.id, ingredient.count);
+    };
+    std::ranges::sort(recipes, [&](const bz::NeuRecipe& a, const bz::NeuRecipe& b) {
+        if (std::tie(a.output, a.output_count) != std::tie(b.output, b.output_count)) {
+            return std::tie(a.output, a.output_count) < std::tie(b.output, b.output_count);
+        }
+        return std::ranges::lexicographical_compare(a.ingredients, b.ingredients, {}, key, key);
+    });
+    return recipes;
+}
 
 bz::Catalog fixture_catalog() {
     const auto bazaar = bz::parse_bazaar(bz::read_text_file(kFixtures / "bazaar.json"));
@@ -100,6 +120,42 @@ TEST_CASE("load_neu_recipes skips unreadable files", "[neu]") {
     CHECK(result.recipes.size() == 5); // The 3 NPC shop offers are ignored.
 
     CHECK_THROWS_AS(bz::load_neu_recipes(kFixtures / "missing"), std::runtime_error);
+}
+
+TEST_CASE("recipe cache round-trips through parse_recipe_cache", "[neu]") {
+    const auto loaded = bz::load_neu_recipes(kFixtures / "neu" / "items");
+    const auto cached = bz::parse_recipe_cache(bz::serialize_recipe_cache(loaded));
+
+    CHECK(cached.files_read == loaded.files_read);
+    CHECK(cached.files_skipped == loaded.files_skipped);
+    CHECK(sorted(cached.recipes) == sorted(loaded.recipes));
+    CHECK(std::ranges::is_sorted(cached.recipes, {}, &bz::NeuRecipe::output));
+}
+
+TEST_CASE("parse_recipe_cache rejects other formats and malformed caches", "[neu]") {
+    const auto valid = [](const std::string& format, const std::string& recipe) {
+        return R"({"format": )" + format + R"(, "files_read": 1, "files_skipped": 0,
+                   "recipes": {"X": [)" +
+               recipe + "]}}";
+    };
+    const std::string format = std::to_string(bz::kRecipeCacheFormat);
+    const std::string recipe = R"({"count": 2, "ingredients": {"Y": 3}})";
+
+    const auto cached = bz::parse_recipe_cache(valid(format, recipe));
+    REQUIRE(cached.recipes.size() == 1);
+    CHECK(cached.recipes[0] == bz::NeuRecipe{"X", 2, {{"Y", 3}}});
+
+    CHECK_THROWS_AS(bz::parse_recipe_cache("{ not json"), std::runtime_error);
+    CHECK_THROWS_AS(bz::parse_recipe_cache("{}"), std::runtime_error);
+    CHECK_THROWS_AS(
+        bz::parse_recipe_cache(valid(std::to_string(bz::kRecipeCacheFormat + 1), recipe)),
+        std::runtime_error);
+    CHECK_THROWS_AS(bz::parse_recipe_cache(valid(format, R"({"count": 2})")), std::runtime_error);
+    CHECK_THROWS_AS(
+        bz::parse_recipe_cache(valid(format, R"({"count": 0, "ingredients": {"Y": 3}})")),
+        std::runtime_error);
+    CHECK_THROWS_AS(bz::parse_recipe_cache(valid(format, R"({"count": 1, "ingredients": {}})")),
+                    std::runtime_error);
 }
 
 TEST_CASE("parse_bazaar reads quick_status and normalizes ids", "[bazaar]") {
