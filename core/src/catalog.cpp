@@ -10,8 +10,7 @@ namespace bz {
 
 namespace {
 
-/// Merges duplicate ingredients and sorts them so equivalent recipes compare
-/// equal.
+/// Merges duplicate ingredients and sorts them so equivalent recipes compare equal.
 void canonicalize(std::vector<Ingredient>& ingredients) {
     std::sort(ingredients.begin(), ingredients.end(),
               [](const Ingredient& a, const Ingredient& b) { return a.item < b.item; });
@@ -26,6 +25,65 @@ void canonicalize(std::vector<Ingredient>& ingredients) {
         }
     }
     ingredients = std::move(merged);
+}
+
+/**
+ * State of Tarjan's algorithm. The graph goes from each item to the ingredients of its recipes,
+ * so a component is closed only once every component it depends on is closed: components come
+ * out in dependency order.
+ */
+struct Tarjan {
+    std::span<const Item> items;
+    std::span<const Recipe> recipes;
+
+    /// Discovery order of each item; empty while the item is not visited yet.
+    std::vector<std::optional<std::size_t>> index;
+    /// Smallest discovery order reachable from each item through items still on `stack`.
+    std::vector<std::size_t> low;
+    /// True while the item is on `stack`, i.e. not yet assigned to a component.
+    std::vector<bool> on_stack;
+    /// Visited items not yet assigned to a component.
+    std::vector<ItemIndex> stack;
+    /// Discovery order given to the next visited item.
+    std::size_t next_index = 0;
+    /// Items of the closed components, component after component, in dependency order.
+    std::vector<ItemIndex> order;
+    /// Start of each closed component in `order`, followed by `order.size()`.
+    std::vector<std::size_t> boundaries{0};
+
+    /// Visits `item` and its ingredients, closing every component whose root is reached.
+    void visit(ItemIndex item_idx);
+};
+
+void Tarjan::visit(ItemIndex item_idx) {
+    index[item_idx] = next_index;
+    low[item_idx] = next_index;
+    ++next_index;
+    stack.push_back(item_idx);
+    on_stack[item_idx] = true;
+
+    for (const RecipeIndex recipe_idx : items[item_idx].produced_by) {
+        for (const Ingredient& ingredient : recipes[recipe_idx].ingredients) {
+            const ItemIndex next_idx = ingredient.item;
+            if (!index[next_idx]) {
+                visit(next_idx);
+                low[item_idx] = std::min(low[item_idx], low[next_idx]);
+            } else if (on_stack[next_idx]) {
+                low[item_idx] = std::min(low[item_idx], *index[next_idx]);
+            }
+        }
+    }
+
+    if (low[item_idx] == *index[item_idx]) {
+        ItemIndex top_stack = 0;
+        do {
+            top_stack = stack.back();
+            stack.pop_back();
+            on_stack[top_stack] = false;
+            order.push_back(top_stack);
+        } while (top_stack != item_idx);
+        boundaries.push_back(order.size());
+    }
 }
 
 } // namespace
@@ -48,6 +106,7 @@ Catalog Catalog::build(const BazaarSnapshot& bazaar, const std::vector<NeuRecipe
         catalog.add_recipe(std::move(recipe));
     }
 
+    catalog.compute_components();
     return catalog;
 }
 
@@ -103,6 +162,9 @@ RecipeIndex Catalog::add_recipe(Recipe recipe) {
         return *duplicate;
     }
 
+    order_.clear(); // components computed earlier are no longer valid
+    boundaries_.clear();
+
     const RecipeIndex index = recipes_.size();
     items_[recipe.output].produced_by.push_back(index);
     for (const Ingredient& ingredient : recipe.ingredients) {
@@ -110,6 +172,24 @@ RecipeIndex Catalog::add_recipe(Recipe recipe) {
     }
     recipes_.push_back(std::move(recipe));
     return index;
+}
+
+void Catalog::compute_components() {
+    const std::size_t n = items_.size();
+    Tarjan tarjan{.items = items_,
+                  .recipes = recipes_,
+                  .index = std::vector<std::optional<std::size_t>>(n),
+                  .low = std::vector<std::size_t>(n),
+                  .on_stack = std::vector<bool>(n)};
+
+    for (ItemIndex item = 0; item < n; ++item) {
+        if (!tarjan.index[item]) {
+            tarjan.visit(item);
+        }
+    }
+
+    order_ = std::move(tarjan.order);
+    boundaries_ = std::move(tarjan.boundaries);
 }
 
 } // namespace bz

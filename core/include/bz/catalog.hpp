@@ -23,8 +23,8 @@ namespace bz {
  * Items and recipes are addressed by dense indices that stay valid for the catalog's
  * lifetime. Item ids are normalized on every lookup, so callers may pass raw ids.
  *
- * The graph may contain cycles (for instance an item and its compacted block); algorithms
- * walking it are responsible for handling them.
+ * The graph may contain cycles (for instance an item and its compacted block). build() groups
+ * the items of each cycle into a strongly connected component, see component().
  */
 class Catalog {
 public:
@@ -87,10 +87,38 @@ public:
     /// All recipes, indexed by RecipeIndex.
     [[nodiscard]] std::span<const Recipe> recipes() const noexcept { return recipes_; }
 
+    /// Number of strongly connected components, see component().
+    [[nodiscard]] std::size_t component_count() const noexcept {
+        return boundaries_.empty() ? 0 : boundaries_.size() - 1;
+    }
+
+    /**
+     * @brief Items of one strongly connected component of the item graph, computed by build().
+     *
+     * Items linked by a crafting cycle (an item and its compacted block, or any longer loop)
+     * share a component; every other item is alone in its own. Components are numbered in
+     * dependency order: component @p index only depends on components with a smaller index.
+     *
+     * @param index Component number, below component_count().
+     * @throws std::out_of_range If @p index is not a valid component number.
+     */
+    [[nodiscard]] std::span<const ItemIndex> component(std::size_t index) const {
+        const std::size_t begin = boundaries_.at(index);
+        return std::span{order_}.subspan(begin, boundaries_.at(index + 1) - begin);
+    }
+
 private:
+    /// Fills order_ and boundaries_ from the stored recipes (Tarjan's algorithm).
+    void compute_components();
+
     std::vector<Item> items_;
     std::vector<Recipe> recipes_;
     std::unordered_map<std::string, ItemIndex> index_by_id_;
+    /// Every item, component after component, in dependency order.
+    std::vector<ItemIndex> order_;
+    /// Component `c` is `order_[boundaries_[c], boundaries_[c + 1])`; the last entry is
+    /// `order_.size()`.
+    std::vector<std::size_t> boundaries_;
 };
 
 } // namespace bz

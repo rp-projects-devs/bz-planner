@@ -261,3 +261,30 @@ TEST_CASE("Catalog validates recipes", "[catalog]") {
     CHECK_THROWS_AS(catalog.add_recipe({.output = a, .ingredients = {{a, -1}}}),
                     std::invalid_argument);
 }
+
+TEST_CASE("Catalog groups crafting cycles into components in dependency order", "[catalog]") {
+    // TOP <- MID <- RAW <-> BLOCK, and TOP <- RAW.
+    const std::vector<bz::NeuRecipe> recipes{
+        {"MID", 1, {{"RAW", 4}}},
+        {"TOP", 1, {{"MID", 3}, {"RAW", 1}}},
+        {"BLOCK", 1, {{"RAW", 9}}},
+        {"RAW", 9, {{"BLOCK", 1}}},
+    };
+    const auto catalog = bz::Catalog::build({}, recipes);
+
+    std::vector<std::size_t> component_of(catalog.items().size());
+    std::size_t placed = 0;
+    for (std::size_t c = 0; c < catalog.component_count(); ++c) {
+        for (const bz::ItemIndex item : catalog.component(c)) {
+            component_of[item] = c;
+            ++placed;
+        }
+    }
+    const auto component = [&](const char* id) { return component_of[*catalog.find(id)]; };
+
+    CHECK(placed == catalog.items().size());
+    CHECK(catalog.component_count() == 3);
+    CHECK(component("RAW") == component("BLOCK"));
+    CHECK(component("RAW") < component("MID"));
+    CHECK(component("MID") < component("TOP"));
+}
