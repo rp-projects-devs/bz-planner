@@ -135,6 +135,22 @@ With limits, `scan` sizes a plan for every craftable item and ranks them by the 
 can make in one go; `plan` then gives the exact orders and crafts. Prices are a snapshot of
 October 2026: run `bz update` before trusting any number.
 
+A Bazaar *order* (buy order or sell offer) holds at most 71 680 units, and a player can have
+only a limited number of open orders at once, their *order slots* (21 by default here). Buying
+150 000 units of one ingredient therefore takes 3 slots. The scan columns:
+
+| Column       | Meaning                                                           |
+|--------------|-------------------------------------------------------------------|
+| `Quantity`   | Units of the item to craft and sell                               |
+| `Orders`     | Buy orders to place for the ingredients (slots used)              |
+| `Invested`   | Cost of all ingredients                                           |
+| `Profit`     | Revenue of the crafted units minus `Invested`                     |
+| `Margin`     | `Profit / Invested` of the whole plan, rounding included          |
+| `Limited by` | What prevents one more unit: order slots, budget or liquidity     |
+
+Without limits, `scan` shows per-unit columns instead (`Cost`, `Revenue`, `Profit` and `Margin`
+of one crafted unit).
+
 - **Always pass `--liquidity`** (10 = sell at most 10 % of the item's weekly sales volume).
   Without it, `scan` assumes the market buys everything you craft and ranks items with a single
   overpriced sell offer and no real volume first; `bz` prints a note to remind you.
@@ -177,14 +193,16 @@ Coin amounts accept suffixes: `750k`, `50m`, `2.5b`. Run `bz <command> --help` f
 | `--budget AMOUNT`   | `plan` `scan`        |         | Coins available for ingredients              |
 | `--liquidity PCT`   | `plan` `scan`        |         | Max share of the item's weekly sales volume  |
 | `--min-volume N`    | `scan`               | `0`     | Minimum weekly sales volume of the item      |
-| `--min-margin PCT`  | `scan`               | `0`     | Minimum profit margin                        |
-| `--max-cost AMOUNT` | `scan`               |         | Maximum cost of one craft                    |
+| `--min-margin PCT`  | `scan`               | `0`     | Minimum profit margin per unit               |
+| `--max-cost AMOUNT` | `scan`               |         | Maximum cost per crafted unit                |
 | `--top N`           | `scan`               | `20`    | Number of results                            |
 | `--depth N`         | `item` `plan` `scan` | `5`     | Recipe levels explored below the target      |
 | `--paths N`         | `item` `plan` `scan` | `10`    | Cheapest paths listed / kept per item        |
 
 The defaults of `--depth` and `--paths` never hide a better choice on the real data: see
-[Correctness](#correctness).
+[Correctness](#correctness). `--min-margin` and `--max-cost` filter craft paths by their cost per
+unit, also when limits are given: the `Margin` column of a sized scan, computed on the whole plan,
+can differ slightly.
 
 The weekly sales volume depends on how you sell: sell offers are filled by players buying
 instantly (`buyMovingWeek`), instant sales fill buy orders (`sellMovingWeek`).
@@ -218,13 +236,19 @@ The defaults (`--buy order --sell offer --tax 0`) reproduce the Python reference
    pruning keeps the cheapest paths. Each path records its tree of crafts.
 4. **Plans** (`make_plan`). For one path, the largest quantity that fits the limits is found by
    binary search. Quantities follow the craft tree: a recipe yielding 3 units and needed for 4
-   runs twice, so leftovers are paid for. Purchases are then split into 71 680-unit orders.
+   runs twice, so leftovers are paid for. Purchases are then split into orders of at most
+   71 680 units, the Bazaar's limit per order.
 5. **Choosing the path to plan** (`plan_paths`, `best_plan`). Under order slots the cheapest path
    per unit is often not the most profitable, and the right one can rank beyond the hundredth.
-   A second search works on whole quantities: for a quantity, it keeps for every item the craft
-   options whose orders fit the limits and that no cheaper option buying no more of any item
-   beats (so purchases shared by two branches are counted once). Run on a geometric grid of
-   quantities, it yields the paths worth sizing; each is planned and the most profitable wins.
+   A second search therefore works on a whole quantity `q` of the target. For every item of the
+   tree, it lists the ways to obtain the units needed for `q` (buy them, or craft them from
+   bought or crafted ingredients) whose orders fit the slots and budget. An option is dropped
+   only if another one costs no more *and* buys no more units of every item: a dearer option
+   buying one enchanted item instead of 160 raw ones survives, since it saves orders. Purchases
+   are compared item by item, not just by number of orders, because two branches buying the same
+   ingredient share its orders. Run for a range of quantities (the largest feasible one, then
+   divided by 1.5 down to 1), this search yields the paths worth sizing; each is planned and the
+   most profitable wins.
 6. **Scan** (`scan`). Without limits, every craftable Bazaar item is ranked by the unit profit
    of its cheapest path. With limits, by the profit of its best plan, items in parallel.
 
@@ -233,28 +257,28 @@ The defaults (`--buy order --sell offer --tax 0`) reproduce the Python reference
 Checked on the full NEU repository and real Bazaar snapshots, independently of the code under
 test:
 
-- **Craft paths**: for each of the 2 513 craftable items, the 10 cheapest paths equal those of
-  an exhaustive enumeration without pruning, at depths 1 to 5 (items over 200 000
-  combinations are skipped: 2 at depth 4, 14 at depth 5). Every path's purchases match its craft
-  tree, no path buys an item inside its own tree, and none is cheaper than `compute_min_costs`.
+- **Craft paths**: for each of the 2 513 craftable items (on the Bazaar or not), the 10 cheapest
+  paths equal those of an exhaustive enumeration without pruning, at depths 1 to 5 (items over
+  200 000 combinations are skipped: 2 at depth 4, 14 at depth 5). Every path's purchases match its
+  craft tree, no path buys an item inside its own tree, and none is cheaper than
+  `compute_min_costs`.
 - **Plan sizing**: on 14 012 path × constraint cases, the quantity is feasible, one more unit is
   not, and orders, slots and costs match a separate simulation of the craft tree.
-- **Path choice under limits**: for the 369 craftable Bazaar items × 7 sets of limits × 2 pricing
-  modes, on two snapshots, the plan chosen by `bz` is as profitable as the best plan over every
-  path of the exhaustive enumeration, whenever that plan makes a profit (5 152 cases whose
-  enumeration has fewer than 5 000 distinct paths).
-  To stay fast, the search keeps at most 256 options per item and quantity; on real data this
-  cap trims 0.6 % of them without changing any checked result, so it is a measured heuristic,
-  not a proof.
+- **Path choice under limits**: for the 369 craftable items sold on the Bazaar × 7 sets of limits
+  × 2 pricing modes, on two snapshots, the plan chosen by `bz` is as profitable as the best plan
+  over every path of the exhaustive enumeration, whenever that plan makes a profit (5 152 cases
+  whose enumeration has fewer than 5 000 distinct paths). To stay fast, the search keeps at most
+  256 options per item and quantity; on real data this cap trims 0.6 % of them without changing any
+  checked result, so it is a measured heuristic, not a proof.
 - **Defaults**: `--depth 5` gives the same cheapest paths and the same best plans as depth 8
-  (depth 4 misses some), and the chosen plan is identical with `--paths` 1, 10 or 1 000.
-  Choosing only among the cheapest paths per unit, as the prototype does, missed a better plan
-  in 126 of 3 690 cases with depth 3 and 10 paths, and still in 6 with depth 8 and 1 000 paths.
+  (depth 4 misses some), and the chosen plan is identical with `--paths` 1, 10 or 1 000. Choosing
+  only among the cheapest paths per unit, as the prototype does, missed a better plan in 126 of
+  3 690 cases with depth 3 and 10 paths, and still in 6 with depth 8 and 1 000 paths.
 - **Python prototype** (`reference/`): parsing and pricing match it. Its planner rounds each
   purchase once over the whole quantity (`ceil(amount × q)`), which underestimates nested
-  multi-output recipes; this happens in 155 of the plans above, up to 6 % of the cost. `bz` rounds
-  every recipe to whole crafts instead. It also skips the prototype's paths that buy an item to
-  craft that same item.
+  multi-output recipes; this happens in 155 of the 14 012 sized plans, up to 6 % of the cost. `bz`
+  rounds every recipe to whole crafts instead. It also skips the prototype's paths that buy an item
+  to craft that same item.
 
 Unit tests cover parsing, the graph, pricing and every algorithm on small synthetic economies.
 

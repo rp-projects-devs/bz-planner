@@ -111,9 +111,10 @@ int main(int argc, char** argv) {
                      "Minimum weekly sales volume of the crafted item")
         ->check(CLI::NonNegativeNumber)
         ->capture_default_str();
-    scan->add_option("--min-margin", min_margin_percent, "Minimum profit margin, in percent")
+    scan->add_option("--min-margin", min_margin_percent,
+                     "Minimum profit margin per unit, in percent")
         ->capture_default_str();
-    scan->add_option("--max-cost", max_cost, "Maximum cost of one craft (e.g. 2.5m)")
+    scan->add_option("--max-cost", max_cost, "Maximum cost per crafted unit (e.g. 2.5m)")
         ->check(kCoinAmount);
     scan->add_option("--top", scan_options.filters.top, "Number of results")
         ->check(CLI::Range(1, 1000))

@@ -213,8 +213,8 @@ public:
         }
     }
 
-    /// Feasible craft trees for @p quantity units of @p target: the cheapest one for every
-    /// number of slots, by increasing cost.
+    /// Feasible craft trees for @p quantity units of @p target that no other tree dominates
+    /// (see keep_front()), by increasing cost.
     std::vector<CraftStep> front(ItemIndex target, std::int64_t quantity, int max_depth) {
         std::vector<CraftStep> trees;
         for (SizedOption& option : resolve(target, quantity, max_depth, false)) {

@@ -20,15 +20,16 @@ namespace bz {
 /// Criteria an item must meet to appear in the scan results.
 struct ScanFilters {
     std::int64_t min_weekly_volume = 0;  ///< Minimum weekly_sell_volume() of the target.
-    double min_margin = 0.0;             ///< Minimum unit_profit / unit_cost (0.05 = 5 %).
-    std::optional<double> max_unit_cost; ///< Maximum cost of one craft, in coins.
+    double min_margin = 0.0;             ///< Minimum unit_profit / unit_cost (0.05 = 5 %), per
+                                         ///< path, even when plans are sized.
+    std::optional<double> max_unit_cost; ///< Maximum CraftPath::unit_cost, in coins.
     std::size_t top = 20;                ///< Maximum number of results.
 };
 
 /// One profitable craft.
 struct ScanResult {
     ItemIndex item = 0;        ///< Crafted item.
-    CraftPath path;            ///< Cheapest craft path.
+    CraftPath path;            ///< Cheapest matching path, or the path of @ref plan if sized.
     double unit_revenue = 0.0; ///< Sale price after tax.
     double unit_profit = 0.0;  ///< unit_revenue − CraftPath::unit_cost.
     double margin = 0.0;       ///< unit_profit / CraftPath::unit_cost.
@@ -38,15 +39,14 @@ struct ScanResult {
 /**
  * @brief Finds the most profitable crafts.
  *
- * Every Bazaar item with a recipe and a sale price is evaluated with the paths of best_paths()
- * that have a strictly positive unit profit and meet every filter.
+ * Every Bazaar item with a recipe and a sale price is evaluated with its craft paths that have a
+ * strictly positive unit profit and meet every filter.
  *
- * Without @p constraints, an item is represented by its cheapest such path and results are
- * ranked by unit profit. With @p constraints, the paths come from plan_paths() and are sized
- * with best_plan(), so an
- * item is represented by the plan earning the most within the player's slots, coins and
- * liquidity; items whose best plan does not make a profit are dropped, and results are ranked by
- * Plan::profit. Ties keep item index order.
+ * Without @p constraints, the paths come from best_paths(), an item is represented by its
+ * cheapest such path and results are ranked by unit profit. With @p constraints, the paths come
+ * from plan_paths() and are sized with best_plan(), so an item is represented by the plan earning
+ * the most within the player's slots, coins and liquidity; items whose best plan does not make a
+ * profit are dropped, and results are ranked by Plan::profit. Ties keep item index order.
  *
  * @param catalog Item graph.
  * @param pricing Trading strategy.
