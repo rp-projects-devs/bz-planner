@@ -87,7 +87,7 @@ TEST_CASE("Missing or invalid prices yield no price", "[pricing]") {
 // run them with `bz_tests "[todo]"`, then remove the "[.]" tag once they pass.
 // ---------------------------------------------------------------------------
 
-TEST_CASE("compute_min_costs picks the cheapest source and survives cycles", "[.][todo][solver]") {
+TEST_CASE("compute_min_costs picks the cheapest source and survives cycles", "[todo][solver]") {
     const bz::Catalog catalog = synthetic_world();
     const bz::CostTable costs = bz::compute_min_costs(catalog, kRawPrices);
     REQUIRE(costs.size() == catalog.items().size());

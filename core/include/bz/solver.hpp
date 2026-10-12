@@ -49,13 +49,20 @@ struct PathOptions {
  *
  * An item costs the minimum of its Bazaar buy price and, for each crafting recipe, the cost
  * of its ingredients divided by the output count. Only Bazaar prices are used: an item that
- * is neither on the Bazaar nor craftable from Bazaar items is unobtainable. Because the graph may
- * be cyclic, costs are relaxed until a fixed point is reached or @p max_iterations passes have run.
+ * is neither on the Bazaar nor craftable from Bazaar items is unobtainable. A recipe with an
+ * unobtainable ingredient is skipped; it never counts that ingredient as free.
+ *
+ * Components are processed in dependency order (see Catalog::component()), so the ingredients
+ * of an item are final before the item itself, except inside a crafting cycle. A single-item
+ * component needs one pass; a cycle is relaxed until no cost improves or @p max_iterations
+ * passes have run. A recipe replaces the current cost only if it is strictly cheaper, so ties
+ * keep the Bazaar purchase and a self-loop recipe never lowers a cost. Every recipe is
+ * evaluated once per pass: the total work is linear in the number of ingredient entries.
  *
  * @param catalog Item graph.
  * @param pricing Trading strategy; only PricingConfig::buy is used.
- * @param max_iterations Upper bound on relaxation passes.
- * @return One entry per item.
+ * @param max_iterations Upper bound on relaxation passes for each crafting cycle.
+ * @return One entry per item, indexed by ItemIndex; an empty entry means "unobtainable".
  */
 [[nodiscard]] CostTable compute_min_costs(const Catalog& catalog, const PricingConfig& pricing,
                                           int max_iterations = 64);
