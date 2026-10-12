@@ -414,6 +414,15 @@ and pull request. On Windows, run the tests with `ctest --test-dir build -C Rele
 - Detection of manipulated prices
 - Web API and front end
 
+## How this project was built
+
+`bz` started as a Python prototype (`reference/`), then was ported to C++. Parts of the code,
+tests and documentation were written with an AI coding assistant (Claude Code), under my
+direction: I set the goals, the design rules and the constraints, and decided what was kept.
+The results do not rely on trusting either of us: every algorithm is covered by unit tests and
+checked against the independent exhaustive enumeration described in [Correctness](#correctness),
+and CI builds every change with strict warnings on Linux and Windows.
+
 ## Data sources and disclaimer
 
 - Recipes come from the [NotEnoughUpdates repository][neu] (MIT license), downloaded at build time
