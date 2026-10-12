@@ -53,8 +53,18 @@ struct Plan {
 /**
  * @brief Largest quantity of the target that satisfies every set constraint.
  *
- * Ingredient quantities are rounded up to whole units before checking slots and budget.
+ * For a quantity `q`, each purchase needs `ceil(amount × q)` units, split into orders of at
+ * most kMaxItemsPerOrder units. `q` is feasible when those orders fit in order_slots, their
+ * cost under PricingConfig::buy fits in budget (an ingredient without a price exceeds any
+ * budget), and `q <= floor(liquidity_share × buy_moving_week)` of the target (0 if the target
+ * is not on the Bazaar). Every limit grows with `q`, so the result is found by binary search.
+ * Matches get_max_craftable_quantity() of the Python reference, plus the liquidity limit.
  *
+ * @param catalog Item graph.
+ * @param target Crafted item, used for the liquidity limit.
+ * @param path Craft path to size, usually from best_paths().
+ * @param pricing Trading strategy; only PricingConfig::buy is used.
+ * @param constraints Limits; unset limits are ignored.
  * @return The maximum quantity, possibly 0.
  * @throws std::invalid_argument If no constraint is set (the quantity would be unbounded).
  */
@@ -63,7 +73,19 @@ struct Plan {
                                         const Constraints& constraints);
 
 /**
- * @brief Builds the plan for the largest feasible quantity.
+ * @brief Builds the plan for the largest feasible quantity, see max_quantity().
+ *
+ * Costs use the rounded-up ingredient quantities. The revenue is the quantity times
+ * unit_sell_revenue() of the target, or 0 if the target cannot be sold on the Bazaar. Purchases
+ * rounding to 0 units get no order line. Plan::binding_limits lists the constraints that
+ * quantity + 1 violates, in Limit order.
+ *
+ * @param catalog Item graph.
+ * @param target Crafted item.
+ * @param path Craft path to size, usually from best_paths().
+ * @param pricing Trading strategy.
+ * @param constraints Limits; unset limits are ignored.
+ * @return The plan; Plan::quantity may be 0, with no order.
  * @throws std::invalid_argument If no constraint is set.
  */
 [[nodiscard]] Plan make_plan(const Catalog& catalog, ItemIndex target, const CraftPath& path,

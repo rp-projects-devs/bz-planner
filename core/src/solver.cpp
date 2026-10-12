@@ -1,7 +1,11 @@
 #include "bz/solver.hpp"
 
+#include <algorithm>
+#include <cmath>
+#include <iterator>
 #include <span>
 #include <stdexcept>
+#include <utility>
 
 namespace bz {
 
@@ -37,6 +41,133 @@ bool relax_item(const Catalog& catalog, ItemIndex item, CostTable& table) {
     return improved;
 }
 
+/// Adds @p factor × @p source to @p target; both are sorted by item, and so is the result.
+std::vector<Purchase> merge_purchases(const std::vector<Purchase>& target,
+                                      const std::vector<Purchase>& source, double factor) {
+    std::vector<Purchase> merged;
+    merged.reserve(target.size() + source.size());
+    auto a = target.begin();
+    auto b = source.begin();
+    while (a != target.end() || b != source.end()) {
+        if (b == source.end() || (a != target.end() && a->item < b->item)) {
+            merged.push_back(*a++);
+        } else if (a == target.end() || b->item < a->item) {
+            merged.push_back({b->item, b->amount * factor});
+            ++b;
+        } else {
+            merged.push_back({a->item, a->amount + b->amount * factor});
+            ++a;
+            ++b;
+        }
+    }
+    return merged;
+}
+
+bool same_purchases(const std::vector<Purchase>& a, const std::vector<Purchase>& b) {
+    return std::equal(a.begin(), a.end(), b.begin(), b.end(),
+                      [](const Purchase& x, const Purchase& y) {
+                          return x.item == y.item && std::abs(x.amount - y.amount) <=
+                                                         1e-9 * std::max(1.0, std::abs(x.amount));
+                      });
+}
+
+/// Sorts @p paths by cost, drops paths buying the same amounts as a cheaper one, keeps top_k.
+void keep_best(std::vector<CraftPath>& paths, std::size_t top_k) {
+    std::stable_sort(paths.begin(), paths.end(), [](const CraftPath& a, const CraftPath& b) {
+        return a.unit_cost < b.unit_cost;
+    });
+    std::vector<CraftPath> kept;
+    for (CraftPath& path : paths) {
+        if (kept.size() == top_k) {
+            break;
+        }
+        const bool duplicate = std::any_of(kept.begin(), kept.end(), [&](const CraftPath& other) {
+            return same_purchases(other.purchases, path.purchases);
+        });
+        if (!duplicate) {
+            kept.push_back(std::move(path));
+        }
+    }
+    paths = std::move(kept);
+}
+
+/// Depth-limited enumeration of the cheapest ways to obtain one unit of an item.
+class PathSearch {
+public:
+    PathSearch(const Catalog& catalog, ItemIndex target, const PricingConfig& pricing,
+               std::size_t top_k)
+        : catalog_(catalog), target_(target), pricing_(pricing), top_k_(top_k),
+          on_branch_(catalog.items().size(), false) {}
+
+    /// Ways to obtain one unit of @p item, expanding at most @p depth_left recipe levels.
+    std::vector<CraftPath> resolve(ItemIndex item, int depth_left) {
+        std::vector<CraftPath> options;
+        if (item != target_) {
+            if (const auto price = unit_buy_cost(catalog_.item(item), pricing_.buy)) {
+                options.push_back({.purchases = {{item, 1.0}}, .unit_cost = *price});
+            }
+        }
+        if (depth_left <= 0 || on_branch_[item]) {
+            return options;
+        }
+
+        on_branch_[item] = true;
+        for (RecipeIndex recipe_idx : catalog_.item(item).produced_by) {
+            std::vector<CraftPath> crafted = resolve_recipe(recipe_idx, depth_left);
+            options.insert(options.end(), std::make_move_iterator(crafted.begin()),
+                           std::make_move_iterator(crafted.end()));
+        }
+        on_branch_[item] = false;
+
+        keep_best(options, top_k_);
+        return options;
+    }
+
+private:
+    /// Ways to obtain one output unit of a recipe, combining the options of its ingredients.
+    std::vector<CraftPath> resolve_recipe(RecipeIndex recipe_idx, int depth_left) {
+        const Recipe& recipe = catalog_.recipe(recipe_idx);
+        std::vector<CraftPath> partial{{.steps = {recipe_idx}}};
+
+        for (const Ingredient& ingredient : recipe.ingredients) {
+            const std::vector<CraftPath> options = resolve(ingredient.item, depth_left - 1);
+            if (options.empty()) {
+                return {};
+            }
+            const double factor =
+                static_cast<double>(ingredient.count) / static_cast<double>(recipe.output_count);
+
+            std::vector<CraftPath> combined;
+            combined.reserve(partial.size() * options.size());
+            for (const CraftPath& base : partial) {
+                for (const CraftPath& option : options) {
+                    CraftPath path{.purchases =
+                                       merge_purchases(base.purchases, option.purchases, factor),
+                                   .steps = base.steps,
+                                   .unit_cost = base.unit_cost + factor * option.unit_cost};
+                    for (RecipeIndex step : option.steps) {
+                        if (std::find(path.steps.begin(), path.steps.end(), step) ==
+                            path.steps.end()) {
+                            path.steps.push_back(step);
+                        }
+                    }
+                    combined.push_back(std::move(path));
+                }
+            }
+            keep_best(combined, top_k_);
+            partial = std::move(combined);
+        }
+        return partial;
+    }
+
+    const Catalog& catalog_;
+    ItemIndex target_; ///< Never bought: a path buying its own output is not a craft.
+    const PricingConfig& pricing_;
+    std::size_t top_k_;
+    /// Items whose recipes are being expanded on the current branch (cycle guard).
+    std::vector<bool> on_branch_;
+};
+
 } // namespace
 
 CostTable compute_min_costs(const Catalog& catalog, const PricingConfig& pricing,
@@ -65,14 +196,16 @@ CostTable compute_min_costs(const Catalog& catalog, const PricingConfig& pricing
     return table;
 }
 
-// TODO(v1): expand the target's recipes recursively, keeping only the top_k
-// cheapest partial paths per item and depth, and skipping items already on the
-// current branch (cycles).
-std::vector<CraftPath> best_paths([[maybe_unused]] const Catalog& catalog,
-                                  [[maybe_unused]] ItemIndex target,
-                                  [[maybe_unused]] const PricingConfig& pricing,
-                                  [[maybe_unused]] const PathOptions& options) {
-    throw std::logic_error("bz::best_paths is not implemented yet");
+std::vector<CraftPath> best_paths(const Catalog& catalog, ItemIndex target,
+                                  const PricingConfig& pricing, const PathOptions& options) {
+    if (target >= catalog.items().size()) {
+        throw std::out_of_range("bz::best_paths: unknown target item");
+    }
+    if (options.top_k == 0) {
+        return {};
+    }
+    PathSearch search(catalog, target, pricing, options.top_k);
+    return search.resolve(target, options.max_depth);
 }
 
 } // namespace bz

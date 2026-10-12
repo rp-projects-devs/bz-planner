@@ -83,11 +83,10 @@ TEST_CASE("Missing or invalid prices yield no price", "[pricing]") {
 }
 
 // ---------------------------------------------------------------------------
-// Specification tests for the v1 algorithms. They are hidden until implemented:
-// run them with `bz_tests "[todo]"`, then remove the "[.]" tag once they pass.
+// v1 algorithms on the synthetic economy.
 // ---------------------------------------------------------------------------
 
-TEST_CASE("compute_min_costs picks the cheapest source and survives cycles", "[todo][solver]") {
+TEST_CASE("compute_min_costs picks the cheapest source and survives cycles", "[solver]") {
     const bz::Catalog catalog = synthetic_world();
     const bz::CostTable costs = bz::compute_min_costs(catalog, kRawPrices);
     REQUIRE(costs.size() == catalog.items().size());
@@ -109,7 +108,7 @@ TEST_CASE("compute_min_costs picks the cheapest source and survives cycles", "[t
     CHECK_FALSE(costs[index_of(catalog, "WIDGET")].has_value());
 }
 
-TEST_CASE("best_paths ranks craft paths by unit cost", "[.][todo][solver]") {
+TEST_CASE("best_paths ranks craft paths by unit cost", "[solver]") {
     const bz::Catalog catalog = synthetic_world();
     const auto paths = bz::best_paths(catalog, index_of(catalog, "TOP"), kRawPrices);
 
@@ -126,7 +125,7 @@ TEST_CASE("best_paths ranks craft paths by unit cost", "[.][todo][solver]") {
     CHECK(bz::best_paths(catalog, index_of(catalog, "WIDGET"), kRawPrices).empty());
 }
 
-TEST_CASE("max_quantity honors each constraint", "[.][todo][planner]") {
+TEST_CASE("max_quantity honors each constraint", "[planner]") {
     const bz::Catalog catalog = synthetic_world();
     const bz::ItemIndex top = index_of(catalog, "TOP");
     const bz::CraftPath path{.purchases = {{index_of(catalog, "RAW"), 13.0}}, .unit_cost = 130.0};
@@ -140,7 +139,7 @@ TEST_CASE("max_quantity honors each constraint", "[.][todo][planner]") {
     CHECK_THROWS_AS(bz::max_quantity(catalog, top, path, kRawPrices, {}), std::invalid_argument);
 }
 
-TEST_CASE("make_plan splits purchases into Bazaar orders", "[.][todo][planner]") {
+TEST_CASE("make_plan splits purchases into Bazaar orders", "[planner]") {
     const bz::Catalog catalog = synthetic_world();
     const bz::ItemIndex raw = index_of(catalog, "RAW");
     const bz::CraftPath path{.purchases = {{raw, 13.0}}, .unit_cost = 130.0};
@@ -161,7 +160,7 @@ TEST_CASE("make_plan splits purchases into Bazaar orders", "[.][todo][planner]")
     CHECK(plan.orders[0].slot_amounts == std::vector<std::int64_t>{71'680, 71'671});
 }
 
-TEST_CASE("scan returns profitable crafts sorted by unit profit", "[.][todo][scanner]") {
+TEST_CASE("scan returns profitable crafts sorted by unit profit", "[scanner]") {
     const bz::Catalog catalog = synthetic_world();
     const auto results = bz::scan(catalog, kRawPrices, {.top = 10});
 
@@ -170,4 +169,73 @@ TEST_CASE("scan returns profitable crafts sorted by unit profit", "[.][todo][sca
     CHECK_THAT(results[0].unit_profit, WithinAbs(50.0, 1e-9));
     CHECK(results[1].item == index_of(catalog, "MID"));
     CHECK_THAT(results[1].unit_profit, WithinAbs(5.0, 1e-9));
+}
+
+TEST_CASE("best_paths honors max_depth and never buys the target", "[solver]") {
+    const bz::Catalog catalog = synthetic_world();
+    const bz::ItemIndex top = index_of(catalog, "TOP");
+
+    // One level: MID is bought, 3 × 50 + 10.
+    const auto shallow = bz::best_paths(catalog, top, kRawPrices, {.max_depth = 1});
+    REQUIRE_FALSE(shallow.empty());
+    CHECK_THAT(shallow.front().unit_cost, WithinAbs(160.0, 1e-9));
+    CHECK(shallow.front().steps.size() == 1);
+    CHECK(bz::best_paths(catalog, top, kRawPrices, {.max_depth = 0}).empty());
+
+    // RAW ← BLOCK ← RAW is a cycle: BLOCK must be bought, never crafted from RAW.
+    const bz::ItemIndex raw = index_of(catalog, "RAW");
+    const auto raw_paths = bz::best_paths(catalog, raw, kRawPrices);
+    REQUIRE(raw_paths.size() == 1);
+    REQUIRE(raw_paths[0].purchases.size() == 1);
+    CHECK(raw_paths[0].purchases[0].item == index_of(catalog, "BLOCK"));
+    CHECK_THAT(raw_paths[0].unit_cost, WithinAbs(95.0 / 9.0, 1e-9));
+
+    const auto top_two = bz::best_paths(catalog, top, kRawPrices, {.top_k = 2});
+    CHECK(top_two.size() == 2);
+    for (const bz::CraftPath& path : bz::best_paths(catalog, top, kRawPrices)) {
+        for (const bz::Purchase& purchase : path.purchases) {
+            CHECK(purchase.item != top);
+        }
+    }
+}
+
+TEST_CASE("make_plan reports budget and liquidity limits", "[planner]") {
+    const bz::Catalog catalog = synthetic_world();
+    const bz::ItemIndex top = index_of(catalog, "TOP");
+    const bz::CraftPath path{.purchases = {{index_of(catalog, "RAW"), 13.0}}, .unit_cost = 130.0};
+
+    const bz::Plan budget = bz::make_plan(catalog, top, path, kRawPrices, {.budget = 1'300.0});
+    CHECK(budget.quantity == 10);
+    CHECK(budget.binding_limits == std::vector<bz::Limit>{bz::Limit::Budget});
+    CHECK_THAT(budget.total_cost, WithinRel(1'300.0));
+
+    const bz::Plan both =
+        bz::make_plan(catalog, top, path, kRawPrices, {.budget = 13'000.0, .liquidity_share = 0.1});
+    CHECK(both.quantity == 100);
+    CHECK(both.binding_limits == std::vector<bz::Limit>{bz::Limit::Budget, bz::Limit::Liquidity});
+
+    const bz::Plan none = bz::make_plan(catalog, top, path, kRawPrices, {.budget = 1.0});
+    CHECK(none.quantity == 0);
+    CHECK(none.orders.empty());
+    CHECK(none.slots_used == 0);
+}
+
+TEST_CASE("scan applies its filters", "[scanner]") {
+    const bz::Catalog catalog = synthetic_world();
+    const bz::ItemIndex mid = index_of(catalog, "MID");
+
+    const auto liquid = bz::scan(catalog, kRawPrices, {.min_weekly_volume = 10'000});
+    REQUIRE(liquid.size() == 1);
+    CHECK(liquid[0].item == mid);
+
+    const auto high_margin = bz::scan(catalog, kRawPrices, {.min_margin = 0.2});
+    REQUIRE(high_margin.size() == 1);
+    CHECK(high_margin[0].item == index_of(catalog, "TOP"));
+    CHECK_THAT(high_margin[0].margin, WithinAbs(50.0 / 130.0, 1e-9));
+
+    const auto cheap = bz::scan(catalog, kRawPrices, {.max_unit_cost = 100.0});
+    REQUIRE(cheap.size() == 1);
+    CHECK(cheap[0].item == mid);
+
+    CHECK(bz::scan(catalog, kRawPrices, {.top = 1}).size() == 1);
 }

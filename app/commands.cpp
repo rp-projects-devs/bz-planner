@@ -129,6 +129,10 @@ int run_item(const GlobalOptions& global, const ItemOptions& options) {
 int run_plan(const GlobalOptions& global, const PlanOptions& options) {
     const Catalog catalog = load_catalog(global);
     const ItemIndex item = require_item(catalog, options.id);
+    if (!unit_sell_revenue(catalog.item(item), global.pricing.sell, global.pricing.tax_rate)) {
+        std::cerr << catalog.item(item).id << " cannot be sold on the Bazaar\n";
+        return EXIT_FAILURE;
+    }
 
     const auto paths = best_paths(catalog, item, global.pricing, options.paths);
     if (paths.empty()) {

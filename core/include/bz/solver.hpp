@@ -70,14 +70,25 @@ struct PathOptions {
 /**
  * @brief Enumerates the cheapest ways to craft a target.
  *
- * Buying the target itself is not a craft path and is never returned. Ingredients may be
- * bought or crafted recursively up to PathOptions::max_depth; cycles are never followed.
+ * The target is always crafted: buying it is not a craft path, and it is never bought as an
+ * ingredient of itself either. Each ingredient is bought or, up to PathOptions::max_depth
+ * recipe levels below the target (1 = the target's recipes with bought ingredients), crafted
+ * recursively. An item already being expanded on the current branch is only bought, so cycles
+ * are never followed. A recipe with an ingredient that can be neither bought nor crafted is
+ * skipped, like in compute_min_costs().
+ *
+ * Only the PathOptions::top_k cheapest options of every item and of every partial recipe are
+ * kept. Costs add up, so this pruning never loses one of the top_k cheapest complete paths.
+ * Paths buying the same amounts as a cheaper one are dropped, so returned paths are distinct.
+ * Matches get_crafting_paths() of the Python reference, ranked by get_path_cost().
  *
  * @param catalog Item graph.
  * @param target Item to craft.
  * @param pricing Trading strategy; only PricingConfig::buy is used.
  * @param options Enumeration limits.
- * @return At most PathOptions::top_k paths, sorted by increasing CraftPath::unit_cost.
+ * @return At most PathOptions::top_k paths, sorted by increasing CraftPath::unit_cost; empty if
+ *         the target has no recipe made of obtainable items or if max_depth < 1.
+ * @throws std::out_of_range If @p target is not a valid item index.
  */
 [[nodiscard]] std::vector<CraftPath> best_paths(const Catalog& catalog, ItemIndex target,
                                                 const PricingConfig& pricing,

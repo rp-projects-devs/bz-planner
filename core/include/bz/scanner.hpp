@@ -1,9 +1,6 @@
 /**
  * @file scanner.hpp
  * @brief Ranking of the most profitable crafts across the whole catalog.
- *
- * Every craftable Bazaar item is evaluated independently, which makes the scan
- * embarrassingly parallel; it is parallelized with OpenMP when enabled at build time.
  */
 #pragma once
 
@@ -38,6 +35,11 @@ struct ScanResult {
 
 /**
  * @brief Finds the most profitable crafts.
+ *
+ * Every Bazaar item with a recipe and a sale price is evaluated with its cheapest path from
+ * best_paths(). It is kept if its unit profit is strictly positive and it meets every filter.
+ * Ties keep item index order.
+ *
  * @param catalog Item graph.
  * @param pricing Trading strategy.
  * @param filters Result filters.
