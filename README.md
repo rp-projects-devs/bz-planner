@@ -74,7 +74,23 @@ files by hand, run `bz neu-cache`.
 
 ### What should I craft? A complete session
 
-With 21 free order slots and 200M coins, from a fresh clone:
+With 21 free order slots and 200M coins, from a fresh clone, ready to copy and paste:
+
+```sh
+# Once: build (also downloads the NEU recipes into data/neu)
+cmake -S . -B build
+cmake --build build -j
+
+# Every session: fresh prices, the best crafts within your limits, then the orders for one of them
+./build/app/bz update
+./build/app/bz scan --slots 21 --budget 200m --liquidity 10 --min-volume 10000 --top 10
+./build/app/bz plan SILVER_FANG --slots 21 --budget 200m --liquidity 10
+
+# From time to time: new NEU recipes
+cmake --build build --target neu-update
+```
+
+Replace `SILVER_FANG` with an item from your scan. The same session with its output:
 
 ```text
 $ cmake -S . -B build                  # also downloads the NEU repository (~20 MB) into data/neu
