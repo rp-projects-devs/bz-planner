@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(bz-planner
-    VERSION 0.1.0
+    VERSION 1.0.0
     DESCRIPTION "Hypixel SkyBlock Bazaar craft-flip planner"
-    HOMEPAGE_URL "https://github.com/<user>/bz-planner"
+    HOMEPAGE_URL "https://github.com/rp-projects-devs/bz-planner"
     LANGUAGES CXX)
 
 if(PROJECT_IS_TOP_LEVEL AND NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
@@ -14,7 +14,7 @@ endif()
 # Options
 # ---------------------------------------------------------------------------
 option(BZ_BUILD_TESTS "Build the unit tests" ${PROJECT_IS_TOP_LEVEL})
-option(BZ_ENABLE_OPENMP "Parallelize the scanner with OpenMP" ON)
+option(BZ_ENABLE_OPENMP "Parallelize NEU parsing with OpenMP" ON)
 option(BZ_ENABLE_SANITIZERS "Instrument with AddressSanitizer and UBSan" OFF)
 option(BZ_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 option(BZ_FETCH_NEU "Download the NEU item repository at configure time" ON)
