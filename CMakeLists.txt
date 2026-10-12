@@ -73,6 +73,8 @@ else()
         -Wold-style-cast -Woverloaded-virtual
         # Designated initializers intentionally omit members that have default values.
         -Wno-missing-field-initializers
+        # Without OpenMP, its pragmas are deliberately ignored.
+        $<$<NOT:$<BOOL:${BZ_ENABLE_OPENMP}>>:-Wno-unknown-pragmas>
         $<$<BOOL:${BZ_WARNINGS_AS_ERRORS}>:-Werror>)
 endif()
 

@@ -38,6 +38,8 @@ struct Purchase {
 struct CraftStep {
     RecipeIndex recipe = 0;        ///< Recipe executed.
     std::vector<CraftStep> inputs; ///< Steps producing the crafted ingredients, in recipe order.
+
+    friend bool operator==(const CraftStep&, const CraftStep&) = default;
 };
 
 /**

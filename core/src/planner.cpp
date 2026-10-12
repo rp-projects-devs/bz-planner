@@ -198,12 +198,10 @@ struct SizedOption {
 };
 
 /**
- * Finds, for one quantity of the target, the cheapest craft tree that fits the order slots and
- * the budget, with every recipe rounded to whole crafts.
- *
- * Each item keeps the Pareto front of its options over (slots, cost): the cheapest option for
- * every number of slots, at most order_slots + 1 options. Without a slot limit only the cheapest
- * option is kept. Identical purchases of different branches are merged before counting slots.
+ * Finds, for one quantity of the target, the craft trees that fit the order slots and the
+ * budget, with every recipe rounded to whole crafts. Every item and partial recipe keeps only
+ * its non-dominated options (see keep_front()); identical purchases of different branches are
+ * merged before counting slots.
  */
 class PlanSearch {
 public:
@@ -497,8 +495,11 @@ std::vector<CraftPath> plan_paths(const Catalog& catalog, ItemIndex target,
     // Largest quantity some craft tree allows: feasibility only shrinks as the quantity grows.
     std::int64_t low = 1;
     std::int64_t high = 2;
-    while (feasible(high) && high < kMaxSearchedQuantity) {
+    while (feasible(high)) {
         low = high;
+        if (high >= kMaxSearchedQuantity) {
+            break;
+        }
         high *= 2;
     }
     while (high - low > 1) {
@@ -511,18 +512,13 @@ std::vector<CraftPath> plan_paths(const Catalog& catalog, ItemIndex target,
     for (double quantity = static_cast<double>(low); quantity >= 1.0; quantity /= kGridRatio) {
         for (CraftStep& craft :
              search.front(target, static_cast<std::int64_t>(quantity), max_depth)) {
-            CraftPath path = path_from_tree(catalog, std::move(craft), pricing);
+            // Compare trees, not average purchases: two trees buying the same amounts per unit
+            // can round to different whole crafts.
             const bool known = std::any_of(paths.begin(), paths.end(), [&](const CraftPath& other) {
-                return other.purchases.size() == path.purchases.size() &&
-                       std::equal(other.purchases.begin(), other.purchases.end(),
-                                  path.purchases.begin(), [](const Purchase& a, const Purchase& b) {
-                                      return a.item == b.item &&
-                                             std::abs(a.amount - b.amount) <=
-                                                 1e-9 * std::max(1.0, std::abs(a.amount));
-                                  });
+                return other.craft == craft;
             });
             if (!known) {
-                paths.push_back(std::move(path));
+                paths.push_back(path_from_tree(catalog, std::move(craft), pricing));
             }
         }
     }

@@ -226,7 +226,10 @@ test:
 - **Path choice under limits**: for the 369 craftable Bazaar items × 7 sets of limits × 2 pricing
   modes, on two snapshots, the plan chosen by `bz` is as profitable as the best plan over every
   path of the exhaustive enumeration, whenever that plan makes a profit (5 152 cases whose
-  enumeration fits in 20 000 paths).
+  enumeration has fewer than 5 000 distinct paths).
+  To stay fast, the search keeps at most 256 options per item and quantity; on real data this
+  cap trims 0.6 % of them without changing any checked result, so it is a measured heuristic,
+  not a proof.
 - **Defaults**: `--depth 5` gives the same cheapest paths and the same best plans as depth 8
   (depth 4 misses some), and the chosen plan is identical with `--paths` 1, 10 or 1 000.
   Choosing only among the cheapest paths per unit, as the prototype does, missed a better plan

@@ -266,7 +266,7 @@ void print_scan(std::ostream& out, const Catalog& catalog, std::span<const ScanR
         out << std::format("{:>4}  {:<36} {:>9} {:>6} {:>10} ", i + 1, catalog.item(result.item).id,
                            plan.quantity, plan.slots_used, format_coins(plan.total_cost))
             << signed_coins(plan.profit, style, 10)
-            << std::format(" {:>7.1f}%  {}\n", 100.0 * result.margin,
+            << std::format(" {:>7.1f}%  {}\n", 100.0 * plan.profit / plan.total_cost,
                            limits.empty() ? "nothing" : limits);
     }
 }
