@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <limits>
 #include <stdexcept>
 #include <utility>
@@ -13,6 +14,12 @@ namespace {
 std::int64_t ceil_div(std::int64_t value, std::int64_t divisor) {
     return (value + divisor - 1) / divisor;
 }
+
+/// Quantities searched by plan_paths(), far above what slots, budget or volume allow.
+constexpr std::int64_t kMaxSearchedQuantity = 1'000'000'000'000;
+
+/// Ratio between two consecutive quantities of the plan_paths() grid.
+constexpr double kGridRatio = 1.5;
 
 /// Evaluates the constraints for any quantity of one path.
 class Sizer {
@@ -182,6 +189,216 @@ private:
     std::optional<std::int64_t> liquidity_cap_;
 };
 
+/// A way to obtain a given number of units of an item, see PlanSearch.
+struct SizedOption {
+    std::vector<std::pair<ItemIndex, std::int64_t>> units; ///< Purchases, sorted by item.
+    std::optional<CraftStep> craft;                        ///< Empty when the item is bought.
+    std::int64_t slots = 0;                                ///< Orders for units.
+    double cost = 0.0;                                     ///< Bazaar cost of units.
+};
+
+/**
+ * Finds, for one quantity of the target, the cheapest craft tree that fits the order slots and
+ * the budget, with every recipe rounded to whole crafts.
+ *
+ * Each item keeps the Pareto front of its options over (slots, cost): the cheapest option for
+ * every number of slots, at most order_slots + 1 options. Without a slot limit only the cheapest
+ * option is kept. Identical purchases of different branches are merged before counting slots.
+ */
+class PlanSearch {
+public:
+    PlanSearch(const Catalog& catalog, const PricingConfig& pricing, const Constraints& constraints)
+        : catalog_(catalog), constraints_(constraints), prices_(catalog.items().size()),
+          on_branch_(catalog.items().size(), false) {
+        for (ItemIndex item = 0; item < prices_.size(); ++item) {
+            prices_[item] = unit_buy_cost(catalog.item(item), pricing.buy);
+        }
+    }
+
+    /// Feasible craft trees for @p quantity units of @p target: the cheapest one for every
+    /// number of slots, by increasing cost.
+    std::vector<CraftStep> front(ItemIndex target, std::int64_t quantity, int max_depth) {
+        std::vector<CraftStep> trees;
+        for (SizedOption& option : resolve(target, quantity, max_depth, false)) {
+            trees.push_back(std::move(*option.craft));
+        }
+        return trees;
+    }
+
+private:
+    std::vector<SizedOption> resolve(ItemIndex item, std::int64_t units, int depth_left,
+                                     bool buyable) {
+        std::vector<SizedOption> options;
+        if (on_branch_[item] || units > kMaxUnits) {
+            return options;
+        }
+        if (buyable && prices_[item]) {
+            options.push_back({.units = {{item, units}},
+                               .slots = ceil_div(units, kMaxItemsPerOrder),
+                               .cost = static_cast<double>(units) * *prices_[item]});
+        }
+        if (depth_left > 0) {
+            on_branch_[item] = true;
+            for (RecipeIndex recipe_idx : catalog_.item(item).produced_by) {
+                std::vector<SizedOption> crafted = resolve_recipe(recipe_idx, units, depth_left);
+                options.insert(options.end(), std::make_move_iterator(crafted.begin()),
+                               std::make_move_iterator(crafted.end()));
+            }
+            on_branch_[item] = false;
+        }
+        keep_front(options);
+        return options;
+    }
+
+    std::vector<SizedOption> resolve_recipe(RecipeIndex recipe_idx, std::int64_t units,
+                                            int depth_left) {
+        const Recipe& recipe = catalog_.recipe(recipe_idx);
+        const std::int64_t crafts = ceil_div(units, recipe.output_count);
+        std::vector<SizedOption> partial{{.craft = CraftStep{.recipe = recipe_idx}}};
+
+        for (const Ingredient& ingredient : recipe.ingredients) {
+            if (crafts > kMaxUnits / ingredient.count) {
+                return {};
+            }
+            const std::vector<SizedOption> inputs =
+                resolve(ingredient.item, crafts * ingredient.count, depth_left - 1, true);
+            std::vector<SizedOption> combined;
+            combined.reserve(partial.size() * inputs.size());
+            for (const SizedOption& base : partial) {
+                for (const SizedOption& input : inputs) {
+                    SizedOption option = merge(base, input);
+                    if (input.craft) {
+                        option.craft->inputs.push_back(*input.craft);
+                    }
+                    combined.push_back(std::move(option));
+                }
+            }
+            keep_front(combined);
+            if (combined.empty()) {
+                return {};
+            }
+            partial = std::move(combined);
+        }
+        return partial;
+    }
+
+    /// @p base with the purchases of @p input added; slots and cost are recomputed after merging.
+    SizedOption merge(const SizedOption& base, const SizedOption& input) const {
+        SizedOption merged{.craft = base.craft};
+        merged.units.reserve(base.units.size() + input.units.size());
+        std::merge(base.units.begin(), base.units.end(), input.units.begin(), input.units.end(),
+                   std::back_inserter(merged.units),
+                   [](const auto& a, const auto& b) { return a.first < b.first; });
+        std::size_t out = 0;
+        for (std::size_t i = 0; i < merged.units.size(); ++i) {
+            if (out > 0 && merged.units[out - 1].first == merged.units[i].first) {
+                merged.units[out - 1].second += merged.units[i].second;
+            } else {
+                merged.units[out++] = merged.units[i];
+            }
+        }
+        merged.units.resize(out);
+        for (const auto& [item, count] : merged.units) {
+            merged.slots += ceil_div(count, kMaxItemsPerOrder);
+            merged.cost += static_cast<double>(count) * *prices_[item];
+        }
+        return merged;
+    }
+
+    /**
+     * Drops infeasible options, then dominated ones. Without a slot limit only the cheapest
+     * option matters. With one, A dominates B when A costs no more and buys no more units of any
+     * item: merging with the purchases of other branches can then never favor B. Comparing only
+     * (slots, cost) would be wrong, since two branches buying the same item share its orders.
+     */
+    void keep_front(std::vector<SizedOption>& options) const {
+        std::erase_if(options, [&](const SizedOption& option) {
+            return (constraints_.order_slots && option.slots > *constraints_.order_slots) ||
+                   (constraints_.budget && option.cost > *constraints_.budget);
+        });
+        std::stable_sort(options.begin(), options.end(),
+                         [](const SizedOption& a, const SizedOption& b) {
+                             return a.cost < b.cost || (a.cost == b.cost && a.slots < b.slots);
+                         });
+        std::vector<SizedOption> front;
+        for (SizedOption& option : options) {
+            if (!constraints_.order_slots && !front.empty()) {
+                break;
+            }
+            const bool dominated =
+                std::any_of(front.begin(), front.end(),
+                            [&](const SizedOption& kept) { return buys_no_more(kept, option); });
+            if (!dominated) {
+                front.push_back(std::move(option));
+            }
+            if (front.size() == kMaxFront) {
+                break;
+            }
+        }
+        options = std::move(front);
+    }
+
+    /// True if every purchase of @p a is also made by @p b, in at least the same quantity.
+    static bool buys_no_more(const SizedOption& a, const SizedOption& b) {
+        auto it = b.units.begin();
+        for (const auto& [item, count] : a.units) {
+            it = std::lower_bound(it, b.units.end(), item, [](const auto& entry, ItemIndex value) {
+                return entry.first < value;
+            });
+            if (it == b.units.end() || it->first != item || it->second < count) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// Options kept per item and quantity, cheapest first; bounds the search on wide recipes.
+    static constexpr std::size_t kMaxFront = 256;
+
+    /// Larger unit counts exceed any order slots or budget; also keeps products in range.
+    static constexpr std::int64_t kMaxUnits = 1'000'000'000'000'000;
+
+    const Catalog& catalog_;
+    const Constraints& constraints_;
+    std::vector<std::optional<double>> prices_;
+    std::vector<bool> on_branch_;
+};
+
+/// Per-unit purchases and cost of a craft tree, as best_paths() reports them.
+CraftPath path_from_tree(const Catalog& catalog, CraftStep craft, const PricingConfig& pricing) {
+    std::vector<Purchase> purchases;
+    const auto add = [&](auto& self, const CraftStep& step, double factor) -> void {
+        const Recipe& recipe = catalog.recipe(step.recipe);
+        for (const Ingredient& ingredient : recipe.ingredients) {
+            const double amount = factor * static_cast<double>(ingredient.count) /
+                                  static_cast<double>(recipe.output_count);
+            const auto input =
+                std::find_if(step.inputs.begin(), step.inputs.end(), [&](const CraftStep& child) {
+                    return catalog.recipe(child.recipe).output == ingredient.item;
+                });
+            if (input != step.inputs.end()) {
+                self(self, *input, amount);
+                continue;
+            }
+            const auto it =
+                std::lower_bound(purchases.begin(), purchases.end(), ingredient.item,
+                                 [](const Purchase& p, ItemIndex item) { return p.item < item; });
+            if (it != purchases.end() && it->item == ingredient.item) {
+                it->amount += amount;
+            } else {
+                purchases.insert(it, {ingredient.item, amount});
+            }
+        }
+    };
+    add(add, craft, 1.0);
+    double unit_cost = 0.0;
+    for (const Purchase& purchase : purchases) {
+        unit_cost +=
+            purchase.amount * unit_buy_cost(catalog.item(purchase.item), pricing.buy).value_or(0.0);
+    }
+    return {.purchases = std::move(purchases), .craft = std::move(craft), .unit_cost = unit_cost};
+}
+
 } // namespace
 
 std::int64_t max_quantity(const Catalog& catalog, ItemIndex target, const CraftPath& path,
@@ -240,6 +457,79 @@ Plan make_plan(const Catalog& catalog, ItemIndex target, const CraftPath& path,
     plan.total_revenue = static_cast<double>(plan.quantity) * revenue;
     plan.profit = plan.total_revenue - plan.total_cost;
     return plan;
+}
+
+std::optional<BestPlan> best_plan(const Catalog& catalog, ItemIndex target,
+                                  std::span<const CraftPath> paths, const PricingConfig& pricing,
+                                  const Constraints& constraints) {
+    std::optional<BestPlan> best;
+    for (std::size_t i = 0; i < paths.size(); ++i) {
+        Plan plan = make_plan(catalog, target, paths[i], pricing, constraints);
+        if (plan.quantity > 0 && (!best || plan.profit > best->plan.profit)) {
+            best = BestPlan{.path_index = i, .plan = std::move(plan)};
+        }
+    }
+    return best;
+}
+
+std::vector<CraftPath> plan_paths(const Catalog& catalog, ItemIndex target,
+                                  const PricingConfig& pricing, const Constraints& constraints,
+                                  const PathOptions& options) {
+    const int max_depth = options.max_depth;
+    if (!constraints.order_slots && !constraints.budget && !constraints.liquidity_share) {
+        throw std::invalid_argument("at least one planning constraint must be set");
+    }
+    PlanSearch search(catalog, pricing, constraints);
+    std::int64_t cap = std::numeric_limits<std::int64_t>::max() / 4;
+    if (constraints.liquidity_share) {
+        const auto weekly =
+            static_cast<double>(weekly_sell_volume(catalog.item(target), pricing.sell));
+        cap = static_cast<std::int64_t>(std::floor(*constraints.liquidity_share * weekly + 1e-9));
+    }
+    const auto feasible = [&](std::int64_t quantity) {
+        return quantity <= cap && !search.front(target, quantity, max_depth).empty();
+    };
+    std::vector<CraftPath> paths = best_paths(catalog, target, pricing, options);
+    if (!feasible(1)) {
+        return paths;
+    }
+
+    // Largest quantity some craft tree allows: feasibility only shrinks as the quantity grows.
+    std::int64_t low = 1;
+    std::int64_t high = 2;
+    while (feasible(high) && high < kMaxSearchedQuantity) {
+        low = high;
+        high *= 2;
+    }
+    while (high - low > 1) {
+        const std::int64_t mid = low + (high - low) / 2;
+        (feasible(mid) ? low : high) = mid;
+    }
+
+    // The best tree changes with the quantity (a tree using fewer slots scales further but
+    // costs more per unit), so collect the fronts along a geometric grid of quantities.
+    for (double quantity = static_cast<double>(low); quantity >= 1.0; quantity /= kGridRatio) {
+        for (CraftStep& craft :
+             search.front(target, static_cast<std::int64_t>(quantity), max_depth)) {
+            CraftPath path = path_from_tree(catalog, std::move(craft), pricing);
+            const bool known = std::any_of(paths.begin(), paths.end(), [&](const CraftPath& other) {
+                return other.purchases.size() == path.purchases.size() &&
+                       std::equal(other.purchases.begin(), other.purchases.end(),
+                                  path.purchases.begin(), [](const Purchase& a, const Purchase& b) {
+                                      return a.item == b.item &&
+                                             std::abs(a.amount - b.amount) <=
+                                                 1e-9 * std::max(1.0, std::abs(a.amount));
+                                  });
+            });
+            if (!known) {
+                paths.push_back(std::move(path));
+            }
+        }
+    }
+    std::stable_sort(paths.begin(), paths.end(), [](const CraftPath& a, const CraftPath& b) {
+        return a.unit_cost < b.unit_cost;
+    });
+    return paths;
 }
 
 } // namespace bz

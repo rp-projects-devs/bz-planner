@@ -15,6 +15,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <optional>
 #include <string>
 
 namespace bz::app {
@@ -29,8 +30,9 @@ struct GlobalOptions {
 
 /// Options of `bz scan`.
 struct ScanOptions {
-    ScanFilters filters; ///< Result filters.
-    PathOptions paths;   ///< Path enumeration limits.
+    ScanFilters filters;                    ///< Result filters.
+    PathOptions paths;                      ///< Path enumeration limits.
+    std::optional<Constraints> constraints; ///< When set, rank by the profit of a sized plan.
 };
 
 /// Options of `bz item`.

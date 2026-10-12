@@ -14,7 +14,7 @@ endif()
 # Options
 # ---------------------------------------------------------------------------
 option(BZ_BUILD_TESTS "Build the unit tests" ${PROJECT_IS_TOP_LEVEL})
-option(BZ_ENABLE_OPENMP "Parallelize NEU parsing with OpenMP" ON)
+option(BZ_ENABLE_OPENMP "Parallelize NEU parsing and sized scans with OpenMP" ON)
 option(BZ_ENABLE_SANITIZERS "Instrument with AddressSanitizer and UBSan" OFF)
 option(BZ_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 option(BZ_FETCH_NEU "Download the NEU item repository at configure time" ON)

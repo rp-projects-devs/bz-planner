@@ -48,7 +48,7 @@ void print_paths(std::ostream& out, const Catalog& catalog, std::span<const Craf
 /// Prints a plan and its order breakdown.
 void print_plan(std::ostream& out, const Catalog& catalog, const Plan& plan, const Style& style);
 
-/// Prints scan results as a table.
+/// Prints scan results as a table, with plan columns when the results hold sized plans.
 void print_scan(std::ostream& out, const Catalog& catalog, std::span<const ScanResult> results,
                 const Style& style);
 

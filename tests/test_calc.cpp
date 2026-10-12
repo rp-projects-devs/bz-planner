@@ -320,3 +320,55 @@ TEST_CASE("best_paths never buys an item inside its own recipe tree", "[solver]"
     REQUIRE(wool_paths.size() == 1);
     CHECK_THAT(wool_paths[0].unit_cost, WithinAbs(20.0, 1e-9));
 }
+
+TEST_CASE("plan_paths finds paths that save order slots", "[planner]") {
+    // CHIP = 160 DUST (1 coin each) or 1 DUST_BLOCK (200 coins), sold 300.
+    bz::BazaarSnapshot bazaar;
+    bazaar.products = {product("DUST", 1, 1), product("DUST_BLOCK", 200, 200),
+                       product("CHIP", 300, 300)};
+    const std::vector<bz::NeuRecipe> recipes{
+        {.output = "DUST_BLOCK", .ingredients = {{"DUST", 160}}},
+        {.output = "CHIP", .ingredients = {{"DUST_BLOCK", 1}}},
+    };
+    const bz::Catalog catalog = bz::Catalog::build(bazaar, recipes);
+    const bz::ItemIndex chip = index_of(catalog, "CHIP");
+    const bz::Constraints one_slot{.order_slots = 1};
+
+    // Per unit, crafting the block is cheapest (160 vs 200)...
+    const auto cheapest = bz::best_paths(catalog, chip, kRawPrices, {.top_k = 1});
+    REQUIRE(cheapest.size() == 1);
+    CHECK_THAT(cheapest[0].unit_cost, WithinAbs(160.0, 1e-9));
+    const auto cheap_plan = bz::best_plan(catalog, chip, cheapest, kRawPrices, one_slot);
+    REQUIRE(cheap_plan);
+    CHECK(cheap_plan->plan.quantity == 448); // 71 680 DUST / 160
+
+    // ...but one order of blocks crafts 160 times more chips.
+    const auto paths = bz::plan_paths(catalog, chip, kRawPrices, one_slot, {.top_k = 1});
+    const auto best = bz::best_plan(catalog, chip, paths, kRawPrices, one_slot);
+    REQUIRE(best);
+    CHECK(best->plan.quantity == 71'680);
+    CHECK_THAT(best->plan.profit, WithinRel(71'680.0 * 100.0));
+    REQUIRE(best->plan.orders.size() == 1);
+    CHECK(best->plan.orders[0].item == index_of(catalog, "DUST_BLOCK"));
+
+    CHECK_THROWS_AS(bz::plan_paths(catalog, chip, kRawPrices, {}), std::invalid_argument);
+}
+
+TEST_CASE("scan with constraints ranks by the profit of the best plan", "[scanner]") {
+    const bz::Catalog catalog = synthetic_world();
+    // TOP earns 50 per unit but only 1 000 sell per week; MID earns 5 with 1 000 000.
+    const auto results =
+        bz::scan(catalog, kRawPrices, {}, {}, bz::Constraints{.liquidity_share = 0.1});
+    REQUIRE(results.size() == 2);
+    CHECK(results[0].item == index_of(catalog, "MID"));
+    REQUIRE(results[0].plan);
+    CHECK(results[0].plan->quantity == 100'000);
+    CHECK_THAT(results[0].plan->profit, WithinRel(500'000.0));
+    CHECK(results[1].item == index_of(catalog, "TOP"));
+    REQUIRE(results[1].plan);
+    CHECK_THAT(results[1].plan->profit, WithinRel(5'000.0));
+
+    CHECK_FALSE(bz::scan(catalog, kRawPrices, {}).front().plan.has_value());
+    CHECK_THROWS_AS(bz::scan(catalog, kRawPrices, {}, {}, bz::Constraints{}),
+                    std::invalid_argument);
+}

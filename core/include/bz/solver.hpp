@@ -55,7 +55,7 @@ struct CraftPath {
 
 /// Limits of the path enumeration.
 struct PathOptions {
-    int max_depth = 3;      ///< Maximum number of recipe levels expanded below the target.
+    int max_depth = 5;      ///< Maximum number of recipe levels expanded below the target.
     std::size_t top_k = 10; ///< Number of paths kept, at the target and at every level.
 };
 

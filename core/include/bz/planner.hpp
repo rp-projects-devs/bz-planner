@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <vector>
 
 namespace bz {
@@ -105,5 +106,63 @@ struct Plan {
  */
 [[nodiscard]] Plan make_plan(const Catalog& catalog, ItemIndex target, const CraftPath& path,
                              const PricingConfig& pricing, const Constraints& constraints);
+
+/// The most profitable plan among several craft paths, see best_plan().
+struct BestPlan {
+    std::size_t path_index = 0; ///< Index of the planned path in the input span.
+    Plan plan;                  ///< Plan built by make_plan() for that path.
+};
+
+/**
+ * @brief Plans every path and keeps the one with the highest total profit.
+ *
+ * The cheapest path per unit is not always the best under limits: a path with more distinct
+ * ingredients uses more order slots. Like get_best_paths_limited() in the Python reference,
+ * every path is sized and the highest Plan::profit wins; ties keep the earlier path.
+ *
+ * @param catalog Item graph.
+ * @param target Crafted item.
+ * @param paths Candidate paths, usually from plan_paths().
+ * @param pricing Trading strategy.
+ * @param constraints Limits; unset limits are ignored.
+ * @return The best plan, or `std::nullopt` if no path allows a positive quantity.
+ * @throws std::invalid_argument In the same cases as max_quantity().
+ */
+[[nodiscard]] std::optional<BestPlan> best_plan(const Catalog& catalog, ItemIndex target,
+                                                std::span<const CraftPath> paths,
+                                                const PricingConfig& pricing,
+                                                const Constraints& constraints);
+
+/**
+ * @brief Craft paths worth sizing under constraints: best_paths() plus a plan-aware search.
+ *
+ * best_paths() ranks paths by unit cost, but under order slots a dearer path can earn more: for
+ * instance buying enchanted ingredients instead of 160 times more raw items uses far fewer
+ * orders, and such a path can rank far beyond PathOptions::top_k. This function therefore adds
+ * the paths found by a search on whole quantities. For a quantity `q`, the search finds every
+ * craft tree, rounded to whole crafts, whose orders fit in order_slots and budget and that is
+ * not beaten by a cheaper tree buying no more units of any item (so that merging the purchases
+ * of two branches into the same orders is accounted for); at most 256 options are kept per item
+ * and quantity. It finds the largest feasible `q`, also capped by liquidity_share, then collects
+ * these trees at every quantity of a geometric grid (ratio 1.5) down to 1. Pass the result to
+ * best_plan().
+ *
+ * Items follow the same rules as best_paths(): bought or crafted up to PathOptions::max_depth
+ * recipe levels, never needed again inside their own recipe tree. On the full NEU repository
+ * and two Bazaar snapshots, best_plan() over these paths matched best_plan() over every path
+ * (exhaustive enumeration) for every profitable item.
+ *
+ * @param catalog Item graph.
+ * @param target Crafted item.
+ * @param pricing Trading strategy.
+ * @param constraints Limits; at least one must be set.
+ * @param options Path enumeration limits.
+ * @return Distinct paths sorted by unit cost; empty if the target cannot be crafted.
+ * @throws std::invalid_argument If no constraint is set.
+ */
+[[nodiscard]] std::vector<CraftPath> plan_paths(const Catalog& catalog, ItemIndex target,
+                                                const PricingConfig& pricing,
+                                                const Constraints& constraints,
+                                                const PathOptions& options = {});
 
 } // namespace bz

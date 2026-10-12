@@ -23,10 +23,10 @@ order slots, budget and the market's liquidity.
   offers, with an optional Bazaar sales tax.
 - **Ranked craft paths**: every way to craft an item down to Bazaar purchases, a few recipe
   levels deep, cheapest first.
-- **Constrained planning**: the largest quantity you can craft within your order slots, budget and
-  a share of the item's weekly volume, with an order-by-order breakdown.
-- **Global scan**: the most profitable crafts across the whole Bazaar, filtered by volume, margin
-  and cost, in about 13 ms for a full command.
+- **Constrained planning**: the most profitable quantity and craft path within your order slots,
+  budget and a share of the item's weekly sales volume, with the exact orders and crafts.
+- **Global scan**: every craft of the Bazaar ranked by profit per unit (13 ms) or, within your
+  limits, by the total profit of its best plan (94 ms on 8 threads with OpenMP).
 
 ## Requirements
 
@@ -35,7 +35,7 @@ order slots, budget and the market's liquidity.
 | C++ compiler | GCC 13, Clang 17 or MSVC 19.29 (C++20)  |
 | CMake        | 3.25                                    |
 | OpenSSL      | 3.0 (HTTPS client)                      |
-| OpenMP       | optional, enabled by default (NEU parsing) |
+| OpenMP       | optional, enabled by default (NEU parsing, sized scan) |
 
 The other dependencies ([nlohmann/json][json], [CLI11][cli11], [cpp-httplib][httplib] and
 [Catch2][catch2]) are found on the system or fetched automatically at pinned versions.
@@ -72,13 +72,74 @@ files by hand, run `bz neu-cache`.
 
 ## Usage
 
+### What should I craft? A complete session
+
+With 21 free order slots and 200M coins, from a fresh clone:
+
+```text
+$ cmake -S . -B build                  # also downloads the NEU repository (~20 MB) into data/neu
+-- Downloading NEU repository from https://github.com/NotEnoughUpdates/NotEnoughUpdates-REPO/...
+-- NEU repository ready in data/neu
+$ cmake --build build -j
+
+$ ./build/app/bz update                # fresh Bazaar prices; the only command using the network
+Bazaar: 2201 products, saved to data/cache/bazaar-prices.json
+NEU:    2562 recipes from 8937 files (0 skipped)
+NEU recipes are refreshed with: cmake --build <build-dir> --target neu-update
+
+$ ./build/app/bz scan --slots 21 --budget 200m --liquidity 10 --min-volume 10000 --top 10
+   #  Item                                  Quantity Orders   Invested     Profit   Margin  Limited by
+   1  SILVER_FANG                              35321     13     92.96M    253.32M   272.5%  liquidity
+   2  SPIKED_BAIT                             527314     16    134.44M    236.54M   175.9%  liquidity
+   3  SUPER_COMPACTOR_3000                      2315     11    199.93M    216.46M   108.3%  budget
+   4  ENCHANTED_SHARK_FIN                       3418      8     42.77M    210.17M   491.4%  liquidity
+   5  FUEL_GABAGOOL                            10039      5    111.58M    189.59M   169.9%  liquidity
+   6  WHALE_BAIT                               48716      3    200.00M    171.81M    85.9%  budget
+   7  ENCHANTED_TENDER_WOOD                     1254      3     28.08M    160.02M   570.0%  liquidity
+   8  ENCHANTED_EYE_OF_ENDER                   31360     21    145.03M    138.95M    95.8%  order slots
+   9  ENCHANTED_FERMENTED_SPIDER_EYE            3929     12    199.96M    131.86M    65.9%  budget
+  10  REVENANT_VISCERA                          6753     17    199.99M    113.42M    56.7%  budget
+
+$ ./build/app/bz plan SILVER_FANG --slots 21 --budget 200m --liquidity 10
+Quantity       35321
+Orders used    13
+Total cost     92.96M
+Total revenue  346.28M
+Profit         253.32M
+Limited by     liquidity
+
+Orders
+  ENCHANTED_GHAST_TEAR                   883025 units   13 orders  @      105.3  =     92.96M
+
+Crafts
+  SILVER_FANG                             35321 crafts  → 35321 units
+```
+
+With limits, `scan` sizes a plan for every craftable item and ranks them by the total profit you
+can make in one go; `plan` then gives the exact orders and crafts. Prices are a snapshot of
+October 2026: run `bz update` before trusting any number.
+
+- **Always pass `--liquidity`** (10 = sell at most 10 % of the item's weekly sales volume).
+  Without it, `scan` assumes the market buys everything you craft and ranks items with a single
+  overpriced sell offer and no real volume first; `bz` prints a note to remind you.
+- **`--min-volume`** drops thin markets whose prices move with a single order.
+- **Cheapest per unit is not best under limits.** Crafting enchanted ghast tears yourself is
+  cheaper per fang, but needs 125 ghast tears per fang: 62 orders for the same quantity. Within 21
+  slots that path earns about 90M; buying enchanted ghast tears earns 253M. `plan` and a sized
+  `scan` search the craft tree for such paths (see [How it works](#how-it-works)).
+- Without limits, `bz scan` ranks crafts by profit per unit, and `bz item ID` shows an item's
+  prices, recipe tree and cheapest paths.
+
+### Commands and options
+
 ```sh
 bz update                                   # download fresh Bazaar prices (only network access)
-bz item ENCHANTED_COCOA                     # prices, recipe tree and ranked craft paths
-bz plan ENCHANTED_COCOA --slots 21 --budget 50m --liquidity 10
-bz plan ENCHANTED_COCOA --budget 50m        # budget only; 21 slots if no limit at all
-bz scan --min-volume 500000 --min-margin 5 --top 20
+bz scan --slots 21 --budget 200m --liquidity 10   # best crafts within your limits
+bz scan --min-volume 500000 --min-margin 5        # best profit per unit, no sizing
+bz plan ENCHANTED_COOKIE --budget 50m       # budget only; 21 slots if no limit at all
+bz item ENCHANTED_COOKIE                    # prices, recipe tree and ranked craft paths
 bz neu-cache                                # rebuild the recipe cache from data/neu
+cmake --build build --target neu-update     # download the latest NEU recipes
 ```
 
 Global options apply to every command and go before it:
@@ -94,47 +155,20 @@ Global options apply to every command and go before it:
 
 Coin amounts accept suffixes: `750k`, `50m`, `2.5b`. Run `bz <command> --help` for every option.
 
-| Command option     | Commands           | Default | Description                                 |
-|--------------------|--------------------|---------|---------------------------------------------|
-| `--depth N`        | `item` `plan` `scan` | `3`   | Recipe levels explored below the target     |
-| `--paths N`        | `item` `plan` `scan` | `10`  | Paths kept per item                         |
-| `--slots N`        | `plan`             |         | Bazaar order slots (21 if no limit is given) |
-| `--budget AMOUNT`  | `plan`             |         | Coins available for ingredients             |
-| `--liquidity PCT`  | `plan`             |         | Max share of the item's weekly sales volume |
-| `--min-volume N`   | `scan`             | `0`     | Minimum weekly sales volume of the item     |
-| `--min-margin PCT` | `scan`             | `0`     | Minimum profit margin                       |
-| `--max-cost AMOUNT`| `scan`             |         | Maximum cost of one craft                   |
-| `--top N`          | `scan`             | `20`    | Number of results                           |
+| Command option      | Commands             | Default | Description                                  |
+|---------------------|----------------------|---------|----------------------------------------------|
+| `--slots N`         | `plan` `scan`        |         | Bazaar order slots (`plan`: 21 if no limit)  |
+| `--budget AMOUNT`   | `plan` `scan`        |         | Coins available for ingredients              |
+| `--liquidity PCT`   | `plan` `scan`        |         | Max share of the item's weekly sales volume  |
+| `--min-volume N`    | `scan`               | `0`     | Minimum weekly sales volume of the item      |
+| `--min-margin PCT`  | `scan`               | `0`     | Minimum profit margin                        |
+| `--max-cost AMOUNT` | `scan`               |         | Maximum cost of one craft                    |
+| `--top N`           | `scan`               | `20`    | Number of results                            |
+| `--depth N`         | `item` `plan` `scan` | `5`     | Recipe levels explored below the target      |
+| `--paths N`         | `item` `plan` `scan` | `10`    | Cheapest paths listed / kept per item        |
 
-### Example
-
-```text
-$ bz scan --min-volume 500000 --min-margin 5 --top 5
-   #  Item                                       Cost    Revenue     Profit   Margin
-   1  ENCHANTED_SUGAR_CANE                     17.92k    102.50k     84.58k   472.0%
-   2  ENCHANTED_GOLD_BLOCK                     12.80k     78.16k     65.36k   510.6%
-   3  ENCHANTED_BAKED_POTATO                   20.48k     77.24k     56.76k   277.2%
-   4  ENCHANTED_DIAMOND_BLOCK                 158.94k    204.90k     45.96k    28.9%
-   5  ENCHANTED_GOLDEN_CARROT                  36.57k     77.32k     40.75k   111.4%
-
-$ bz plan ENCHANTED_COOKIE --slots 21 --budget 500m --liquidity 5
-Quantity       6760
-Orders used    16
-Total cost     499.97M
-Total revenue  563.28M
-Profit         63.31M
-Limited by     budget
-
-Orders
-  ENCHANTED_COCOA                       1081600 units   16 orders  @      462.3  =    499.97M
-
-Crafts
-  ENCHANTED_COOKIE                         6760 crafts  → 6760 units
-```
-
-The cheapest path for an enchanted cookie buys 25 600 cocoa beans, but at 71 680 units per order
-it fills the slots after a few dozen crafts. `plan` sizes every ranked path and keeps the one
-with the highest total profit, here buying enchanted cocoa instead.
+The defaults of `--depth` and `--paths` never hide a better choice on the real data: see
+[Correctness](#correctness).
 
 The weekly sales volume depends on how you sell: sell offers are filled by players buying
 instantly (`buyMovingWeek`), instant sales fill buy orders (`sellMovingWeek`).
@@ -166,26 +200,40 @@ The defaults (`--buy order --sell offer --tax 0`) reproduce the Python reference
    (buying it to craft it never beats buying it), so cycles are never followed. Only the
    `--paths` cheapest options of every item and partial recipe are kept: costs add up, so this
    pruning keeps the cheapest paths. Each path records its tree of crafts.
-4. **Plans** (`make_plan`). The largest quantity that fits the limits is found by binary search.
-   Quantities follow the craft tree: a recipe yielding 3 units and needed for 4 runs twice, so
-   leftovers are paid for. Purchases are then split into 71 680-unit orders.
-5. **Scan** (`scan`). Every craftable Bazaar item is ranked by the unit profit of its cheapest
-   path.
+4. **Plans** (`make_plan`). For one path, the largest quantity that fits the limits is found by
+   binary search. Quantities follow the craft tree: a recipe yielding 3 units and needed for 4
+   runs twice, so leftovers are paid for. Purchases are then split into 71 680-unit orders.
+5. **Choosing the path to plan** (`plan_paths`, `best_plan`). Under order slots the cheapest path
+   per unit is often not the most profitable, and the right one can rank beyond the hundredth.
+   A second search works on whole quantities: for a quantity, it keeps for every item the craft
+   options whose orders fit the limits and that no cheaper option buying no more of any item
+   beats (so purchases shared by two branches are counted once). Run on a geometric grid of
+   quantities, it yields the paths worth sizing; each is planned and the most profitable wins.
+6. **Scan** (`scan`). Without limits, every craftable Bazaar item is ranked by the unit profit
+   of its cheapest path. With limits, by the profit of its best plan, items in parallel.
 
 ## Correctness
 
-Checked on the full NEU repository and a real Bazaar snapshot, independently of the code under
+Checked on the full NEU repository and real Bazaar snapshots, independently of the code under
 test:
 
 - **Craft paths**: for each of the 2 513 craftable items, the 10 cheapest paths equal those of
   an exhaustive enumeration without pruning, at depths 1 to 5 (items over 200 000
-  combinations are skipped: 2 at depth 4, 14 at depth 5). Every path's purchases match its craft tree, no path
-  buys an item inside its own tree, and none is cheaper than `compute_min_costs`.
-- **Plans**: on 14 012 path × constraint cases, the quantity is feasible, one more unit is not,
-  and orders, slots and costs match a separate simulation of the craft tree.
+  combinations are skipped: 2 at depth 4, 14 at depth 5). Every path's purchases match its craft
+  tree, no path buys an item inside its own tree, and none is cheaper than `compute_min_costs`.
+- **Plan sizing**: on 14 012 path × constraint cases, the quantity is feasible, one more unit is
+  not, and orders, slots and costs match a separate simulation of the craft tree.
+- **Path choice under limits**: for the 369 craftable Bazaar items × 7 sets of limits × 2 pricing
+  modes, on two snapshots, the plan chosen by `bz` is as profitable as the best plan over every
+  path of the exhaustive enumeration, whenever that plan makes a profit (5 152 cases whose
+  enumeration fits in 20 000 paths).
+- **Defaults**: `--depth 5` gives the same cheapest paths and the same best plans as depth 8
+  (depth 4 misses some), and the chosen plan is identical with `--paths` 1, 10 or 1 000.
+  Choosing only among the cheapest paths per unit, as the prototype does, missed a better plan
+  in 126 of 3 690 cases with depth 3 and 10 paths, and still in 6 with depth 8 and 1 000 paths.
 - **Python prototype** (`reference/`): parsing and pricing match it. Its planner rounds each
   purchase once over the whole quantity (`ceil(amount × q)`), which underestimates nested
-  multi-output recipes; this happens in 155 of those plans, up to 6 % of the cost. `bz` rounds
+  multi-output recipes; this happens in 155 of the plans above, up to 6 % of the cost. `bz` rounds
   every recipe to whole crafts instead. It also skips the prototype's paths that buy an item to
   craft that same item.
 
@@ -196,14 +244,15 @@ Unit tests cover parsing, the graph, pricing and every algorithm on small synthe
 Measured with [hyperfine](https://github.com/sharkdp/hyperfine) on an 8-thread machine; raw
 results in `bench/results/`:
 
-| Benchmark                                         | 1 thread | 8 threads | Speedup |
-|---------------------------------------------------|---------:|----------:|--------:|
-| Parsing every NEU file (`load-threads.md`)        | 171 ms   | 86 ms     | ×1.99   |
-| Full `bz scan` from the caches (`scan-threads.md`)| 13.0 ms  | 12.6 ms   | none    |
+| Benchmark (`bench/results/`)                       | 1 thread | 8 threads | Speedup |
+|----------------------------------------------------|---------:|----------:|--------:|
+| Parsing every NEU file (`load-threads.md`)         | 171 ms   | 86 ms     | ×1.99   |
+| `bz scan --slots 21 --budget 200m --liquidity 10`  | 464 ms   | 94 ms     | ×4.95   |
+| `bz scan`, ranking by unit profit (`scan-threads.md`) | 13.0 ms | 13.4 ms  | none    |
 
-A full `scan` spends most of its time reading the two JSON caches; the graph work itself takes
-under 1 ms. Parallelizing the scan with OpenMP was measured and brought no gain, so only the NEU
-parser is parallel.
+A scan without limits spends most of its time reading the two JSON caches; the graph work
+takes under 1 ms, so it stays sequential. Sizing a plan for every item is where the time goes,
+so that scan runs items in parallel with OpenMP.
 
 ## Project layout
 
@@ -239,7 +288,7 @@ find core app tests \( -name '*.cpp' -o -name '*.hpp' \) | xargs clang-format-18
 | CMake option            | Default | Description                              |
 |-------------------------|---------|------------------------------------------|
 | `BZ_BUILD_TESTS`        | `ON`    | Build the unit tests                     |
-| `BZ_ENABLE_OPENMP`      | `ON`    | Parallelize NEU parsing                  |
+| `BZ_ENABLE_OPENMP`      | `ON`    | Parallelize NEU parsing and sized scans  |
 | `BZ_ENABLE_SANITIZERS`  | `OFF`   | ASan + UBSan instrumentation             |
 | `BZ_WARNINGS_AS_ERRORS` | `OFF`   | Fail the build on warnings               |
 | `BZ_FETCH_NEU`          | `ON`    | Download NEU data at configure time      |
@@ -256,7 +305,8 @@ formatting on every push and pull request.
 - [x] Minimal acquisition cost of every item (relaxation over strongly connected components)
 - [x] Ranked craft paths with top-k pruning
 - [x] Constrained planner: order slots, budget, liquidity, order breakdown
-- [x] Global scan, with benchmarks (OpenMP measured, kept for NEU parsing only)
+- [x] Global scan ranked by unit profit or by the profit of a sized plan, parallelized with OpenMP
+      where measured useful
 
 **Later**
 - Forge recipes ranked by profit per hour

@@ -35,6 +35,37 @@ void add_path_options(CLI::App& command, bz::PathOptions& paths) {
         ->capture_default_str();
 }
 
+/// Raw values of the --slots, --budget and --liquidity options.
+struct LimitOptions {
+    std::optional<int> slots;
+    std::optional<std::string> budget;
+    std::optional<double> liquidity_percent;
+
+    [[nodiscard]] bool any() const { return slots || budget || liquidity_percent; }
+
+    [[nodiscard]] bz::Constraints constraints() const {
+        // Like the reference, each limit is optional: a budget alone must not be capped by slots.
+        bz::Constraints result{.order_slots = slots};
+        if (budget) {
+            result.budget = bz::parse_coins(*budget);
+        }
+        if (liquidity_percent) {
+            result.liquidity_share = *liquidity_percent / 100.0;
+        }
+        return result;
+    }
+};
+
+void add_limit_options(CLI::App& command, LimitOptions& limits, const std::string& slots_help) {
+    command.add_option("--slots", limits.slots, slots_help)->check(CLI::Range(1, 100));
+    command.add_option("--budget", limits.budget, "Coins available (e.g. 200m)")
+        ->check(kCoinAmount);
+    command
+        .add_option("--liquidity", limits.liquidity_percent,
+                    "Max share of the item's weekly sales volume, in percent")
+        ->check(CLI::Range(0.0, 100.0));
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -88,6 +119,9 @@ int main(int argc, char** argv) {
         ->check(CLI::Range(1, 1000))
         ->capture_default_str();
     add_path_options(*scan, scan_options.paths);
+    LimitOptions scan_limits;
+    add_limit_options(*scan, scan_limits,
+                      "Bazaar order slots; with any limit, rank by the profit of a sized plan");
 
     // bz item <ID>
     bz::app::ItemOptions item_options;
@@ -97,19 +131,12 @@ int main(int argc, char** argv) {
 
     // bz plan <ID>
     bz::app::PlanOptions plan_options;
-    std::optional<int> slots;
-    std::optional<std::string> budget;
-    std::optional<double> liquidity_percent;
+    LimitOptions plan_limits;
     CLI::App* plan =
         app.add_subcommand("plan", "Size a craft under slot, budget and volume limits");
     plan->add_option("id", plan_options.id, "Item id (e.g. ENCHANTED_COCOA)")->required();
-    plan->add_option("--slots", slots,
-                     "Bazaar order slots available (21 if no limit is given at all)")
-        ->check(CLI::Range(1, 100));
-    plan->add_option("--budget", budget, "Coins available (e.g. 50m)")->check(kCoinAmount);
-    plan->add_option("--liquidity", liquidity_percent,
-                     "Max share of the item's weekly volume, in percent")
-        ->check(CLI::Range(0.0, 100.0));
+    add_limit_options(*plan, plan_limits,
+                      "Bazaar order slots available (21 if no limit is given at all)");
     add_path_options(*plan, plan_options.paths);
 
     // bz update
@@ -128,15 +155,11 @@ int main(int argc, char** argv) {
     if (max_cost) {
         scan_options.filters.max_unit_cost = bz::parse_coins(*max_cost);
     }
-    // Like the reference, each limit is optional: a budget alone must not be capped by slots.
-    plan_options.constraints.order_slots = slots;
-    if (budget) {
-        plan_options.constraints.budget = bz::parse_coins(*budget);
+    if (scan_limits.any()) {
+        scan_options.constraints = scan_limits.constraints();
     }
-    if (liquidity_percent) {
-        plan_options.constraints.liquidity_share = *liquidity_percent / 100.0;
-    }
-    if (!slots && !budget && !liquidity_percent) {
+    plan_options.constraints = plan_limits.constraints();
+    if (!plan_limits.any()) {
         plan_options.constraints.order_slots = bz::kDefaultOrderSlots;
     }
 

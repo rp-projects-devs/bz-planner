@@ -236,16 +236,38 @@ void print_scan(std::ostream& out, const Catalog& catalog, std::span<const ScanR
         out << paint("No profitable craft matches the filters.", Color::Red, style) << '\n';
         return;
     }
-    out << paint(std::format("{:>4}  {:<36} {:>10} {:>10} {:>10} {:>8}", "#", "Item", "Cost",
-                             "Revenue", "Profit", "Margin"),
+    if (!results.front().plan) {
+        out << paint(std::format("{:>4}  {:<36} {:>10} {:>10} {:>10} {:>8}", "#", "Item", "Cost",
+                                 "Revenue", "Profit", "Margin"),
+                     Color::Bold, style)
+            << '\n';
+        for (std::size_t i = 0; i < results.size(); ++i) {
+            const ScanResult& result = results[i];
+            out << std::format("{:>4}  {:<36} {:>10} {:>10} ", i + 1, catalog.item(result.item).id,
+                               format_coins(result.path.unit_cost),
+                               format_coins(result.unit_revenue))
+                << signed_coins(result.unit_profit, style, 10)
+                << std::format(" {:>7.1f}%\n", 100.0 * result.margin);
+        }
+        return;
+    }
+
+    out << paint(std::format("{:>4}  {:<36} {:>9} {:>6} {:>10} {:>10} {:>8}  {}", "#", "Item",
+                             "Quantity", "Orders", "Invested", "Profit", "Margin", "Limited by"),
                  Color::Bold, style)
         << '\n';
     for (std::size_t i = 0; i < results.size(); ++i) {
         const ScanResult& result = results[i];
-        out << std::format("{:>4}  {:<36} {:>10} {:>10} ", i + 1, catalog.item(result.item).id,
-                           format_coins(result.path.unit_cost), format_coins(result.unit_revenue))
-            << signed_coins(result.unit_profit, style, 10)
-            << std::format(" {:>7.1f}%\n", 100.0 * result.margin);
+        const Plan& plan = *result.plan;
+        std::string limits;
+        for (Limit limit : plan.binding_limits) {
+            limits += (limits.empty() ? "" : ", ") + std::string{limit_name(limit)};
+        }
+        out << std::format("{:>4}  {:<36} {:>9} {:>6} {:>10} ", i + 1, catalog.item(result.item).id,
+                           plan.quantity, plan.slots_used, format_coins(plan.total_cost))
+            << signed_coins(plan.profit, style, 10)
+            << std::format(" {:>7.1f}%  {}\n", 100.0 * result.margin,
+                           limits.empty() ? "nothing" : limits);
     }
 }
 

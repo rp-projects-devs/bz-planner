@@ -104,7 +104,12 @@ ItemIndex require_item(const Catalog& catalog, const std::string& id) {
 
 int run_scan(const GlobalOptions& global, const ScanOptions& options) {
     const Catalog catalog = load_catalog(global);
-    const auto results = scan(catalog, global.pricing, options.filters, options.paths);
+    if (options.constraints && !options.constraints->liquidity_share) {
+        std::cerr << "note: without --liquidity, quantities assume the market buys everything "
+                     "you craft\n";
+    }
+    const auto results =
+        scan(catalog, global.pricing, options.filters, options.paths, options.constraints);
     print_scan(std::cout, catalog, results, global.style);
     return EXIT_SUCCESS;
 }
@@ -134,28 +139,20 @@ int run_plan(const GlobalOptions& global, const PlanOptions& options) {
         return EXIT_FAILURE;
     }
 
-    const auto paths = best_paths(catalog, item, global.pricing, options.paths);
+    const auto paths =
+        plan_paths(catalog, item, global.pricing, options.constraints, options.paths);
     if (paths.empty()) {
         std::cerr << "no craft path found for " << catalog.item(item).id << '\n';
         return EXIT_FAILURE;
     }
 
-    // The cheapest path per unit is not always the best under limits: a path with more
-    // distinct ingredients uses more order slots. Like get_best_paths_limited() in the
-    // reference, size every path and keep the one with the highest total profit.
-    std::optional<Plan> best;
-    for (const CraftPath& path : paths) {
-        Plan plan = make_plan(catalog, item, path, global.pricing, options.constraints);
-        if (plan.quantity > 0 && (!best || plan.profit > best->profit)) {
-            best = std::move(plan);
-        }
-    }
+    const auto best = best_plan(catalog, item, paths, global.pricing, options.constraints);
     if (!best) {
         std::cerr << "no feasible plan for " << catalog.item(item).id
                   << " within the given limits\n";
         return EXIT_FAILURE;
     }
-    print_plan(std::cout, catalog, *best, global.style);
+    print_plan(std::cout, catalog, best->plan, global.style);
     return EXIT_SUCCESS;
 }
 
