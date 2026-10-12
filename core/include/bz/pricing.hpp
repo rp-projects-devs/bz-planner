@@ -13,6 +13,7 @@
 
 #include "bz/model.hpp"
 
+#include <cstdint>
 #include <optional>
 
 namespace bz {
@@ -64,5 +65,16 @@ struct PricingConfig {
 /// Overload for items, returning `std::nullopt` when the item is not on the Bazaar.
 [[nodiscard]] std::optional<double> unit_sell_revenue(const Item& item, SellMode mode,
                                                       double tax_rate) noexcept;
+
+/**
+ * @brief Units traded over 7 days on the side of the order book a seller uses.
+ *
+ * Sell offers are filled by players buying instantly (MarketData::buy_moving_week); selling
+ * instantly fills buy orders, which players fill by selling instantly
+ * (MarketData::sell_moving_week).
+ *
+ * @return The weekly volume, or 0 when the item is not on the Bazaar.
+ */
+[[nodiscard]] std::int64_t weekly_sell_volume(const Item& item, SellMode mode) noexcept;
 
 } // namespace bz

@@ -77,7 +77,7 @@ int main(int argc, char** argv) {
     std::optional<std::string> max_cost;
     CLI::App* scan = app.add_subcommand("scan", "Rank the most profitable crafts");
     scan->add_option("--min-volume", scan_options.filters.min_weekly_volume,
-                     "Minimum weekly volume bought of the crafted item")
+                     "Minimum weekly sales volume of the crafted item")
         ->check(CLI::NonNegativeNumber)
         ->capture_default_str();
     scan->add_option("--min-margin", min_margin_percent, "Minimum profit margin, in percent")

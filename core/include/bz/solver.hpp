@@ -30,11 +30,26 @@ struct Purchase {
 };
 
 /**
+ * @brief A recipe executed by a craft path, with the steps producing its crafted ingredients.
+ *
+ * An ingredient of the recipe is crafted if one of @ref inputs outputs it, and bought otherwise
+ * (ingredients are merged per item, so each one is either crafted or bought).
+ */
+struct CraftStep {
+    RecipeIndex recipe = 0;        ///< Recipe executed.
+    std::vector<CraftStep> inputs; ///< Steps producing the crafted ingredients, in recipe order.
+};
+
+/**
  * @brief A complete way to craft one unit of a target, expanded down to Bazaar purchases.
+ *
+ * Amounts are averages per crafted unit: a recipe yielding several units counts a fraction of
+ * its ingredients. make_plan() uses @ref craft to round every recipe to whole crafts.
  */
 struct CraftPath {
     std::vector<Purchase> purchases; ///< Merged per item, sorted by item index.
-    std::vector<RecipeIndex> steps;  ///< Recipes executed, from the target downwards.
+    std::optional<CraftStep> craft;  ///< The target's recipe and nested crafts. Optional so a
+                                     ///< path can be written by hand as purchases only.
     double unit_cost = 0.0;          ///< Bazaar cost per crafted unit under the PricingConfig.
 };
 
@@ -70,17 +85,19 @@ struct PathOptions {
 /**
  * @brief Enumerates the cheapest ways to craft a target.
  *
- * The target is always crafted: buying it is not a craft path, and it is never bought as an
- * ingredient of itself either. Each ingredient is bought or, up to PathOptions::max_depth
- * recipe levels below the target (1 = the target's recipes with bought ingredients), crafted
- * recursively. An item already being expanded on the current branch is only bought, so cycles
- * are never followed. A recipe with an ingredient that can be neither bought nor crafted is
- * skipped, like in compute_min_costs().
+ * The target is always crafted: buying it is not a craft path. Each ingredient is bought or,
+ * up to PathOptions::max_depth recipe levels below the target (1 = the target's recipes with
+ * bought ingredients), crafted recursively. An item being crafted is never needed again below
+ * itself on the same branch: such a recipe is skipped, since buying an item to craft that same
+ * item never beats buying it directly. Cycles are therefore never followed, and a recipe with
+ * an ingredient that can be neither bought nor crafted is skipped, like in compute_min_costs().
  *
  * Only the PathOptions::top_k cheapest options of every item and of every partial recipe are
- * kept. Costs add up, so this pruning never loses one of the top_k cheapest complete paths.
+ * kept. Costs add up, so the cheapest path is always found; the following ones are exact unless
+ * two different partial combinations merge into identical purchases, which costs a slot.
  * Paths buying the same amounts as a cheaper one are dropped, so returned paths are distinct.
- * Matches get_crafting_paths() of the Python reference, ranked by get_path_cost().
+ * Same paths as get_crafting_paths() of the Python reference, ranked by get_path_cost(),
+ * minus those buying an item inside its own recipe tree.
  *
  * @param catalog Item graph.
  * @param target Item to craft.

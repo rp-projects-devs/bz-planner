@@ -65,6 +65,14 @@ std::string_view limit_name(Limit limit) {
     return "unknown";
 }
 
+/// Appends the items crafted by @p step, ingredients before the items made from them.
+void crafted_items(const Catalog& catalog, const CraftStep& step, std::vector<std::string>& ids) {
+    for (const CraftStep& input : step.inputs) {
+        crafted_items(catalog, input, ids);
+    }
+    ids.push_back(catalog.item(catalog.recipe(step.recipe).output).id);
+}
+
 void print_tree_level(std::ostream& out, const Catalog& catalog, ItemIndex item,
                       const std::string& prefix, int depth_left, std::vector<bool>& on_branch,
                       const PricingConfig& pricing, const Style& style) {
@@ -177,6 +185,15 @@ void print_paths(std::ostream& out, const Catalog& catalog, std::span<const Craf
             out << std::format("    {:>10.2f} × {}\n", purchase.amount,
                                catalog.item(purchase.item).id);
         }
+        if (path.craft) {
+            std::vector<std::string> ids;
+            crafted_items(catalog, *path.craft, ids);
+            std::string chain;
+            for (const std::string& id : ids) {
+                chain += (chain.empty() ? "" : " → ") + id;
+            }
+            out << "    " << paint("craft " + chain, Color::Dim, style) << '\n';
+        }
     }
 }
 
@@ -200,6 +217,16 @@ void print_plan(std::ostream& out, const Catalog& catalog, const Plan& plan, con
         out << std::format("  {:<32} {:>12} units  {:>3} orders  @ {:>10}  = {:>10}\n",
                            catalog.item(line.item).id, line.quantity, line.slot_amounts.size(),
                            format_coins(line.unit_price), format_coins(line.total_cost));
+    }
+
+    if (!plan.crafts.empty()) {
+        out << '\n' << paint("Crafts", Color::Bold, style) << '\n';
+        for (const CraftLine& line : plan.crafts) {
+            const Recipe& recipe = catalog.recipe(line.recipe);
+            out << std::format("  {:<32} {:>12} crafts  → {} units\n",
+                               catalog.item(recipe.output).id, line.crafts,
+                               line.crafts * recipe.output_count);
+        }
     }
 }
 

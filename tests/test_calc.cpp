@@ -179,7 +179,8 @@ TEST_CASE("best_paths honors max_depth and never buys the target", "[solver]") {
     const auto shallow = bz::best_paths(catalog, top, kRawPrices, {.max_depth = 1});
     REQUIRE_FALSE(shallow.empty());
     CHECK_THAT(shallow.front().unit_cost, WithinAbs(160.0, 1e-9));
-    CHECK(shallow.front().steps.size() == 1);
+    REQUIRE(shallow.front().craft);
+    CHECK(shallow.front().craft->inputs.empty());
     CHECK(bz::best_paths(catalog, top, kRawPrices, {.max_depth = 0}).empty());
 
     // RAW ← BLOCK ← RAW is a cycle: BLOCK must be bought, never crafted from RAW.
@@ -238,4 +239,84 @@ TEST_CASE("scan applies its filters", "[scanner]") {
     CHECK(cheap[0].item == mid);
 
     CHECK(bz::scan(catalog, kRawPrices, {.top = 1}).size() == 1);
+}
+
+TEST_CASE("make_plan rounds every nested recipe to whole crafts", "[planner]") {
+    // PLATE: 2 ORE → 3 PLATE (not on the Bazaar); GEAR: 2 PLATE → 1 GEAR.
+    bz::BazaarSnapshot bazaar;
+    bazaar.products = {product("ORE", 1, 1),
+                       {"GEAR", bz::MarketData{.buy_price = 10,
+                                               .sell_price = 10,
+                                               .buy_moving_week = 1'000,
+                                               .sell_moving_week = 20}}};
+    const std::vector<bz::NeuRecipe> recipes{
+        {.output = "PLATE", .output_count = 3, .ingredients = {{"ORE", 2}}},
+        {.output = "GEAR", .ingredients = {{"PLATE", 2}}},
+    };
+    const bz::Catalog catalog = bz::Catalog::build(bazaar, recipes);
+    const bz::ItemIndex gear = index_of(catalog, "GEAR");
+    const bz::ItemIndex ore = index_of(catalog, "ORE");
+
+    const auto paths = bz::best_paths(catalog, gear, kRawPrices);
+    REQUIRE(paths.size() == 1);
+    CHECK_THAT(paths[0].unit_cost, WithinAbs(4.0 / 3.0, 1e-9));
+
+    // Selling instantly is limited by the weekly instant sells: 10 % of 20 = 2 gears.
+    const bz::Plan plan =
+        bz::make_plan(catalog, gear, paths[0], kRawPrices, {.liquidity_share = 0.1});
+    CHECK(plan.quantity == 2);
+    CHECK(plan.binding_limits == std::vector<bz::Limit>{bz::Limit::Liquidity});
+    // 2 gears need 4 plates, i.e. 2 crafts of 2 ORE: 4 ORE, not ceil(2 × 4/3) = 3.
+    REQUIRE(plan.orders.size() == 1);
+    CHECK(plan.orders[0].item == ore);
+    CHECK(plan.orders[0].quantity == 4);
+    CHECK_THAT(plan.total_cost, WithinRel(4.0));
+    REQUIRE(plan.crafts.size() == 2);
+    CHECK(catalog.recipe(plan.crafts[0].recipe).output == index_of(catalog, "PLATE"));
+    CHECK(plan.crafts[0].crafts == 2);
+    CHECK(catalog.recipe(plan.crafts[1].recipe).output == gear);
+    CHECK(plan.crafts[1].crafts == 2);
+
+    // Sell offers are filled by instant buyers: 10 % of 1 000.
+    const bz::PricingConfig offers{bz::BuyMode::Instant, bz::SellMode::Offer, 0.0};
+    CHECK(bz::max_quantity(catalog, gear, paths[0], offers, {.liquidity_share = 0.1}) == 100);
+
+    // Without a craft tree, purchases are rounded once, like the reference.
+    const bz::CraftPath flat{.purchases = {{ore, 4.0 / 3.0}}, .unit_cost = 4.0 / 3.0};
+    const bz::Plan flat_plan =
+        bz::make_plan(catalog, gear, flat, kRawPrices, {.liquidity_share = 0.1});
+    REQUIRE(flat_plan.orders.size() == 1);
+    CHECK(flat_plan.orders[0].quantity == 3);
+    CHECK(flat_plan.crafts.empty());
+
+    const bz::CraftPath wrong{.purchases = {{ore, 1.0}}, .craft = paths[0].craft->inputs.front()};
+    CHECK_THROWS_AS(bz::max_quantity(catalog, gear, wrong, kRawPrices, {.order_slots = 1}),
+                    std::invalid_argument);
+}
+
+TEST_CASE("best_paths never buys an item inside its own recipe tree", "[solver]") {
+    // A self-loop (like WOOL) and a 2-cycle: neither may buy the item being crafted.
+    bz::BazaarSnapshot bazaar;
+    bazaar.products = {product("WOOL", 5, 5), product("DYE", 1, 1), product("CARPET", 20, 20)};
+    const std::vector<bz::NeuRecipe> recipes{
+        {.output = "WOOL", .ingredients = {{"WOOL", 1}, {"DYE", 1}}},
+        {.output = "CARPET", .output_count = 2, .ingredients = {{"WOOL", 3}}},
+        {.output = "WOOL", .ingredients = {{"CARPET", 1}}},
+    };
+    const bz::Catalog catalog = bz::Catalog::build(bazaar, recipes);
+    const bz::ItemIndex wool = index_of(catalog, "WOOL");
+
+    for (const char* id : {"WOOL", "CARPET"}) {
+        const bz::ItemIndex target = index_of(catalog, id);
+        for (const bz::CraftPath& path :
+             bz::best_paths(catalog, target, kRawPrices, {.max_depth = 5})) {
+            for (const bz::Purchase& purchase : path.purchases) {
+                CHECK(purchase.item != target);
+            }
+        }
+    }
+    // WOOL: only from a bought CARPET (the dye recipe needs WOOL itself).
+    const auto wool_paths = bz::best_paths(catalog, wool, kRawPrices, {.max_depth = 5});
+    REQUIRE(wool_paths.size() == 1);
+    CHECK_THAT(wool_paths[0].unit_cost, WithinAbs(20.0, 1e-9));
 }

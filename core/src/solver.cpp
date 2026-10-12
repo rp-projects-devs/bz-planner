@@ -94,20 +94,28 @@ void keep_best(std::vector<CraftPath>& paths, std::size_t top_k) {
 /// Depth-limited enumeration of the cheapest ways to obtain one unit of an item.
 class PathSearch {
 public:
-    PathSearch(const Catalog& catalog, ItemIndex target, const PricingConfig& pricing,
-               std::size_t top_k)
-        : catalog_(catalog), target_(target), pricing_(pricing), top_k_(top_k),
+    PathSearch(const Catalog& catalog, const PricingConfig& pricing, std::size_t top_k)
+        : catalog_(catalog), pricing_(pricing), top_k_(top_k),
           on_branch_(catalog.items().size(), false) {}
 
-    /// Ways to obtain one unit of @p item, expanding at most @p depth_left recipe levels.
-    std::vector<CraftPath> resolve(ItemIndex item, int depth_left) {
+    /**
+     * Ways to obtain one unit of @p item, expanding at most @p depth_left recipe levels.
+     *
+     * An item already expanded on the current branch yields no option at all: buying it to
+     * craft it again costs at least as much as buying it directly, so such a path only wastes
+     * a top_k slot. This also keeps the target out of its own purchases.
+     */
+    std::vector<CraftPath> resolve(ItemIndex item, int depth_left, bool buyable) {
         std::vector<CraftPath> options;
-        if (item != target_) {
+        if (on_branch_[item]) {
+            return options;
+        }
+        if (buyable) {
             if (const auto price = unit_buy_cost(catalog_.item(item), pricing_.buy)) {
                 options.push_back({.purchases = {{item, 1.0}}, .unit_cost = *price});
             }
         }
-        if (depth_left <= 0 || on_branch_[item]) {
+        if (depth_left <= 0) {
             return options;
         }
 
@@ -127,10 +135,10 @@ private:
     /// Ways to obtain one output unit of a recipe, combining the options of its ingredients.
     std::vector<CraftPath> resolve_recipe(RecipeIndex recipe_idx, int depth_left) {
         const Recipe& recipe = catalog_.recipe(recipe_idx);
-        std::vector<CraftPath> partial{{.steps = {recipe_idx}}};
+        std::vector<CraftPath> partial{{.craft = CraftStep{.recipe = recipe_idx}}};
 
         for (const Ingredient& ingredient : recipe.ingredients) {
-            const std::vector<CraftPath> options = resolve(ingredient.item, depth_left - 1);
+            const std::vector<CraftPath> options = resolve(ingredient.item, depth_left - 1, true);
             if (options.empty()) {
                 return {};
             }
@@ -143,13 +151,10 @@ private:
                 for (const CraftPath& option : options) {
                     CraftPath path{.purchases =
                                        merge_purchases(base.purchases, option.purchases, factor),
-                                   .steps = base.steps,
+                                   .craft = base.craft,
                                    .unit_cost = base.unit_cost + factor * option.unit_cost};
-                    for (RecipeIndex step : option.steps) {
-                        if (std::find(path.steps.begin(), path.steps.end(), step) ==
-                            path.steps.end()) {
-                            path.steps.push_back(step);
-                        }
+                    if (option.craft) {
+                        path.craft->inputs.push_back(*option.craft);
                     }
                     combined.push_back(std::move(path));
                 }
@@ -161,7 +166,6 @@ private:
     }
 
     const Catalog& catalog_;
-    ItemIndex target_; ///< Never bought: a path buying its own output is not a craft.
     const PricingConfig& pricing_;
     std::size_t top_k_;
     /// Items whose recipes are being expanded on the current branch (cycle guard).
@@ -204,8 +208,8 @@ std::vector<CraftPath> best_paths(const Catalog& catalog, ItemIndex target,
     if (options.top_k == 0) {
         return {};
     }
-    PathSearch search(catalog, target, pricing, options.top_k);
-    return search.resolve(target, options.max_depth);
+    PathSearch search(catalog, pricing, options.top_k);
+    return search.resolve(target, options.max_depth, false);
 }
 
 } // namespace bz

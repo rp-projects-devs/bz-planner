@@ -13,7 +13,7 @@ std::optional<ScanResult> evaluate(const Catalog& catalog, ItemIndex item,
                                    const PathOptions& options) {
     const Item& data = catalog.item(item);
     if (data.produced_by.empty() || !data.market ||
-        data.market->buy_moving_week < filters.min_weekly_volume) {
+        weekly_sell_volume(data, pricing.sell) < filters.min_weekly_volume) {
         return std::nullopt;
     }
     const auto revenue = unit_sell_revenue(data, pricing.sell, pricing.tax_rate);

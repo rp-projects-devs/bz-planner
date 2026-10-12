@@ -36,4 +36,11 @@ std::optional<double> unit_sell_revenue(const Item& item, SellMode mode, double 
     return item.market ? unit_sell_revenue(*item.market, mode, tax_rate) : std::nullopt;
 }
 
+std::int64_t weekly_sell_volume(const Item& item, SellMode mode) noexcept {
+    if (!item.market) {
+        return 0;
+    }
+    return mode == SellMode::Offer ? item.market->buy_moving_week : item.market->sell_moving_week;
+}
+
 } // namespace bz

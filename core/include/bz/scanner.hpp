@@ -18,7 +18,7 @@ namespace bz {
 
 /// Criteria an item must meet to appear in the scan results.
 struct ScanFilters {
-    std::int64_t min_weekly_volume = 0;  ///< Minimum MarketData::buy_moving_week of the target.
+    std::int64_t min_weekly_volume = 0;  ///< Minimum weekly_sell_volume() of the target.
     double min_margin = 0.0;             ///< Minimum unit_profit / unit_cost (0.05 = 5 %).
     std::optional<double> max_unit_cost; ///< Maximum cost of one craft, in coins.
     std::size_t top = 20;                ///< Maximum number of results.

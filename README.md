@@ -8,8 +8,8 @@ A command-line planner for **craft flipping** on the Hypixel SkyBlock Bazaar: fi
 worth crafting, through which recipe path, and exactly which Bazaar orders to place within your
 order slots, budget and the market's liquidity.
 
-> **Status:** v1.0. Every command works; craft paths and plans are checked against the Python
-> prototype on the full NEU repository (see [Correctness](#correctness)).
+> **Status:** v1.0. Every command works; craft paths and plans are checked against an exhaustive
+> enumeration and the Python prototype on the full NEU repository (see [Correctness](#correctness)).
 
 ## Features
 
@@ -100,8 +100,8 @@ Coin amounts accept suffixes: `750k`, `50m`, `2.5b`. Run `bz <command> --help` f
 | `--paths N`        | `item` `plan` `scan` | `10`  | Paths kept per item                         |
 | `--slots N`        | `plan`             |         | Bazaar order slots (21 if no limit is given) |
 | `--budget AMOUNT`  | `plan`             |         | Coins available for ingredients             |
-| `--liquidity PCT`  | `plan`             |         | Max share of the item's weekly volume       |
-| `--min-volume N`   | `scan`             | `0`     | Minimum weekly volume bought of the item    |
+| `--liquidity PCT`  | `plan`             |         | Max share of the item's weekly sales volume |
+| `--min-volume N`   | `scan`             | `0`     | Minimum weekly sales volume of the item     |
 | `--min-margin PCT` | `scan`             | `0`     | Minimum profit margin                       |
 | `--max-cost AMOUNT`| `scan`             |         | Maximum cost of one craft                   |
 | `--top N`          | `scan`             | `20`    | Number of results                           |
@@ -127,11 +127,17 @@ Limited by     budget
 
 Orders
   ENCHANTED_COCOA                       1081600 units   16 orders  @      462.3  =    499.97M
+
+Crafts
+  ENCHANTED_COOKIE                         6760 crafts  → 6760 units
 ```
 
 The cheapest path for an enchanted cookie buys 25 600 cocoa beans, but at 71 680 units per order
 it fills the slots after a few dozen crafts. `plan` sizes every ranked path and keeps the one
 with the highest total profit, here buying enchanted cocoa instead.
+
+The weekly sales volume depends on how you sell: sell offers are filled by players buying
+instantly (`buyMovingWeek`), instant sales fill buy orders (`sellMovingWeek`).
 
 ### How prices are chosen
 
@@ -156,23 +162,34 @@ The defaults (`--buy order --sell offer --tax 0`) reproduce the Python reference
 2. **Minimal costs** (`compute_min_costs`). Components are processed in that order: each item
    costs the minimum of its Bazaar price and of its recipes; cycles are relaxed until stable.
 3. **Craft paths** (`best_paths`). A depth-limited search expands the target's recipes, buying
-   or crafting every ingredient, never following a cycle. Only the `--paths` cheapest options
-   of every item and partial recipe are kept: costs add up, so this pruning is exact.
-4. **Plans** (`make_plan`). The largest quantity that fits the limits is found by binary search,
-   with ingredient quantities rounded up to whole units and split into 71 680-unit orders.
+   or crafting every ingredient. An item is never needed again inside its own recipe tree
+   (buying it to craft it never beats buying it), so cycles are never followed. Only the
+   `--paths` cheapest options of every item and partial recipe are kept: costs add up, so this
+   pruning keeps the cheapest paths. Each path records its tree of crafts.
+4. **Plans** (`make_plan`). The largest quantity that fits the limits is found by binary search.
+   Quantities follow the craft tree: a recipe yielding 3 units and needed for 4 runs twice, so
+   leftovers are paid for. Purchases are then split into 71 680-unit orders.
 5. **Scan** (`scan`). Every craftable Bazaar item is ranked by the unit profit of its cheapest
    path.
 
 ## Correctness
 
-The Python prototype in `reference/` is the behavioral oracle. On the full NEU repository and a
-real Bazaar snapshot (369 craftable items):
+Checked on the full NEU repository and a real Bazaar snapshot, independently of the code under
+test:
 
-- the 10 cheapest path costs of every item match the prototype's exhaustive enumeration
-  exactly, at depths 1 to 4;
-- maximal quantities, order slots and total costs match on 3 424 path × constraint cases.
+- **Craft paths**: for each of the 2 513 craftable items, the 10 cheapest paths equal those of
+  an exhaustive enumeration without pruning, at depths 1 to 5 (items over 200 000
+  combinations are skipped: 2 at depth 4, 14 at depth 5). Every path's purchases match its craft tree, no path
+  buys an item inside its own tree, and none is cheaper than `compute_min_costs`.
+- **Plans**: on 14 012 path × constraint cases, the quantity is feasible, one more unit is not,
+  and orders, slots and costs match a separate simulation of the craft tree.
+- **Python prototype** (`reference/`): parsing and pricing match it. Its planner rounds each
+  purchase once over the whole quantity (`ceil(amount × q)`), which underestimates nested
+  multi-output recipes; this happens in 155 of those plans, up to 6 % of the cost. `bz` rounds
+  every recipe to whole crafts instead. It also skips the prototype's paths that buy an item to
+  craft that same item.
 
-Unit tests cover parsing, the graph, pricing and every algorithm on a small synthetic economy.
+Unit tests cover parsing, the graph, pricing and every algorithm on small synthetic economies.
 
 ## Performance
 
