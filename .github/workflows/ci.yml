@@ -45,6 +45,42 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+  windows:
+    name: msvc / Release
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OpenSSL
+        run: choco install openssl --no-progress -y
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DBZ_WARNINGS_AS_ERRORS=ON
+          -DBZ_FETCH_NEU=OFF
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Run on the test fixtures
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
+          $env:PATH = "C:\Program Files\OpenSSL\bin;C:\Program Files\OpenSSL-Win64\bin;$env:PATH"
+          New-Item -ItemType Directory -Force smoke\cache | Out-Null
+          Copy-Item -Recurse tests\fixtures\neu smoke\neu
+          Copy-Item tests\fixtures\bazaar.json smoke\cache\bazaar-prices.json
+          $bz = ".\build\app\Release\bz.exe"
+          & $bz --version
+          & $bz --data-dir smoke neu-cache
+          & $bz --data-dir smoke --cache-age 2000000000 scan --slots 21 --budget 10m
+          & $bz --data-dir smoke --cache-age 2000000000 plan ENCHANTED_COCOA --budget 1m
+
   format:
     name: clang-format
     runs-on: ubuntu-24.04

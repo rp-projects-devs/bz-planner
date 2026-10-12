@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <cstddef>
 #include <iterator>
 #include <stdexcept>
 #include <system_error>
@@ -181,9 +182,12 @@ NeuLoadResult load_neu_recipes(const std::filesystem::path& items_dir) {
     std::size_t skipped = 0;
 
     // Most iterations are cheap once filtered, so files are handed out in small batches
-    // to limit scheduling overhead while keeping the load balanced.
+    // to limit scheduling overhead while keeping the load balanced. The loop index is signed
+    // because MSVC only implements OpenMP 2.0.
+    const auto count = static_cast<std::ptrdiff_t>(files.size());
 #pragma omp parallel for schedule(dynamic, 16) reduction(+ : read, skipped)
-    for (std::size_t i = 0; i < files.size(); ++i) {
+    for (std::ptrdiff_t index = 0; index < count; ++index) {
+        const auto i = static_cast<std::size_t>(index);
         try {
             const std::string text = read_text_file(files[i]);
             if (text.find(kRecipeMarker) != std::string::npos) {

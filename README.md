@@ -30,29 +30,65 @@ order slots, budget and the market's liquidity.
 
 ## Requirements
 
-| Tool         | Minimum version                         |
-|--------------|-----------------------------------------|
-| C++ compiler | GCC 13, Clang 17 or MSVC 19.29 (C++20)  |
-| CMake        | 3.25                                    |
-| OpenSSL      | 3.0 (HTTPS client)                      |
-| OpenMP       | optional, enabled by default (NEU parsing, sized scan) |
+| Tool         | Linux                                   | Windows                           |
+|--------------|-----------------------------------------|-----------------------------------|
+| C++ compiler | GCC 13 or Clang 17 (C++20)              | Visual Studio 2022 or later       |
+| CMake        | 3.25                                    | 3.25 (included in Visual Studio)  |
+| OpenSSL      | 3.0 development package (HTTPS client)  | Win64 OpenSSL 3.x, full installer |
+| OpenMP       | included in GCC; `libomp-dev` for Clang | included in Visual Studio         |
+
+OpenMP is optional and enabled by default: it parallelizes NEU parsing and sized scans
+(`-DBZ_ENABLE_OPENMP=OFF` to build without it).
 
 The other dependencies ([nlohmann/json][json], [CLI11][cli11], [cpp-httplib][httplib] and
 [Catch2][catch2]) are found on the system or fetched automatically at pinned versions.
 
 ## Build
 
+### Linux
+
+On Ubuntu 24.04 or Debian 13 (other distributions: the same packages under their own names):
+
 ```sh
+sudo apt install build-essential cmake git libssl-dev   # with Clang, also libomp-dev
+git clone https://github.com/rp-projects-devs/bz-planner.git
+cd bz-planner
 cmake -S . -B build
-cmake --build build
+cmake --build build -j
 ctest --test-dir build
 ```
+
+The executable is `build/app/bz`.
+
+### Windows
+
+1. Install [Visual Studio][vs] 2022 or later (the free Community edition is enough) with the
+   **Desktop development with C++** workload, which includes CMake, and [Git for Windows][git].
+2. Install OpenSSL from a terminal: `winget install ShiningLight.OpenSSL.Dev`, or download
+   "Win64 OpenSSL v3" (not the *Light* version) from [slproweb.com][openssl-win].
+3. In a **Developer PowerShell for VS** (Start menu):
+
+```powershell
+git clone https://github.com/rp-projects-devs/bz-planner.git
+cd bz-planner
+cmake -S . -B build
+cmake --build build --config Release
+ctest --test-dir build -C Release
+```
+
+The executable is `build\app\Release\bz.exe`. If Windows reports that `libssl-3-x64.dll` is
+missing, add OpenSSL's `bin` folder (usually `C:\Program Files\OpenSSL-Win64\bin`) to `PATH`.
+Colors and recipe trees display in Windows Terminal, PowerShell and the classic console of
+Windows 10 and later; redirected output is plain UTF-8 text.
+
+### NEU recipes
 
 The first configuration downloads the NEU repository (~20 MB) into `data/neu`. Refresh it later
 with:
 
 ```sh
-cmake --build build --target neu-update
+cmake --build build --target neu-update                    # Linux
+cmake --build build --config Release --target neu-update   # Windows
 ```
 
 ### Data and caches
@@ -74,7 +110,8 @@ files by hand, run `bz neu-cache`.
 
 ### What should I craft? A complete session
 
-With 21 free order slots and 200M coins, from a fresh clone, ready to copy and paste:
+With 21 free order slots and 200M coins, from a fresh clone (see [Build](#build) for the
+tools), ready to copy and paste. On Linux:
 
 ```sh
 # Once: build (also downloads the NEU recipes into data/neu)
@@ -88,6 +125,22 @@ cmake --build build -j
 
 # From time to time: new NEU recipes
 cmake --build build --target neu-update
+```
+
+On Windows, in a Developer PowerShell for VS:
+
+```powershell
+# Once: build (also downloads the NEU recipes into data\neu)
+cmake -S . -B build
+cmake --build build --config Release
+
+# Every session: fresh prices, the best crafts within your limits, then the orders for one of them
+.\build\app\Release\bz.exe update
+.\build\app\Release\bz.exe scan --slots 21 --budget 200m --liquidity 10 --min-volume 10000 --top 10
+.\build\app\Release\bz.exe plan SILVER_FANG --slots 21 --budget 200m --liquidity 10
+
+# From time to time: new NEU recipes
+cmake --build build --config Release --target neu-update
 ```
 
 Replace `SILVER_FANG` with an item from your scan. The same session with its output:
@@ -163,6 +216,8 @@ of one crafted unit).
   prices, recipe tree and cheapest paths.
 
 ### Commands and options
+
+`bz` stands for `./build/app/bz` on Linux and `.\build\app\Release\bz.exe` on Windows.
 
 ```sh
 bz update                                   # download fresh Bazaar prices (only network access)
@@ -337,8 +392,9 @@ find core app tests \( -name '*.cpp' -o -name '*.hpp' \) | xargs clang-format-18
 | `BZ_FETCH_NEU`          | `ON`    | Download NEU data at configure time      |
 | `BZ_BUILD_DOCS`         | `OFF`   | Add the `docs` target                    |
 
-Continuous integration builds with GCC and Clang, runs the tests under sanitizers and checks
-formatting on every push and pull request.
+Continuous integration builds with GCC and Clang on Linux and with MSVC on Windows, runs the tests
+(under sanitizers with GCC) and a sample session on Windows, and checks formatting on every push
+and pull request. On Windows, run the tests with `ctest --test-dir build -C Release`.
 
 ## Roadmap
 
@@ -375,3 +431,6 @@ This project is not affiliated with or endorsed by Hypixel Inc. or Mojang Studio
 [cli11]: https://github.com/CLIUtils/CLI11
 [httplib]: https://github.com/yhirose/cpp-httplib
 [catch2]: https://github.com/catchorg/Catch2
+[vs]: https://visualstudio.microsoft.com/vs/community/
+[git]: https://git-scm.com/download/win
+[openssl-win]: https://slproweb.com/products/Win32OpenSSL.html

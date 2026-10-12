@@ -27,6 +27,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Sources and terminal output are UTF-8 (recipe trees, arrows), whatever the Windows code page.
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
+
 # ---------------------------------------------------------------------------
 # Dependencies (system packages first, otherwise fetched and pinned)
 # ---------------------------------------------------------------------------
@@ -67,6 +72,8 @@ add_library(bz::warnings ALIAS bz_warnings)
 if(MSVC)
     target_compile_options(bz_warnings INTERFACE /W4 /permissive-
         $<$<BOOL:${BZ_WARNINGS_AS_ERRORS}>:/WX>)
+    # std::getenv is safe here: the result is only compared to nullptr.
+    target_compile_definitions(bz_warnings INTERFACE _CRT_SECURE_NO_WARNINGS)
 else()
     target_compile_options(bz_warnings INTERFACE
         -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wnon-virtual-dtor

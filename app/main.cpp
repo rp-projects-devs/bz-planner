@@ -3,6 +3,7 @@
  * @brief Entry point of the `bz` command-line tool: argument parsing and dispatch.
  */
 #include "commands.hpp"
+#include "console.hpp"
 
 #include "bz/util.hpp"
 
@@ -69,6 +70,7 @@ void add_limit_options(CLI::App& command, LimitOptions& limits, const std::strin
 } // namespace
 
 int main(int argc, char** argv) {
+    const bz::app::ConsoleSession console;
     CLI::App app{"Hypixel SkyBlock Bazaar craft-flip planner", "bz"};
     app.set_version_flag("--version", BZ_VERSION);
     app.require_subcommand(1);
@@ -150,7 +152,8 @@ int main(int argc, char** argv) {
 
     global.data_dir = data_dir;
     global.cache_max_age = std::chrono::seconds{cache_seconds};
-    global.style.color = !no_color && std::getenv("NO_COLOR") == nullptr;
+    global.style.color =
+        !no_color && std::getenv("NO_COLOR") == nullptr && console.supports_color();
 
     scan_options.filters.min_margin = min_margin_percent / 100.0;
     if (max_cost) {

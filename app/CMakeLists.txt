@@ -1,6 +1,7 @@
 add_executable(bz
     main.cpp
     commands.cpp
+    console.cpp
     display.cpp
     http.cpp)
 

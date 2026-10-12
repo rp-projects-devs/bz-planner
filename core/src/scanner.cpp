@@ -1,6 +1,7 @@
 #include "bz/scanner.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <exception>
 #include <utility>
 
@@ -69,12 +70,15 @@ std::vector<ScanResult> scan(const Catalog& catalog, const PricingConfig& pricin
                              const std::optional<Constraints>& constraints) {
     // One slot per item: each iteration writes only to its own slot. Sizing plans dominates the
     // run time (bench/results/scan-threads.md) and varies a lot between items, hence dynamic
-    // scheduling; ranking by unit profit only is too fast to gain from threads.
+    // scheduling; ranking by unit profit only is too fast to gain from threads. The loop index is
+    // signed because MSVC only implements OpenMP 2.0.
     const std::size_t count = catalog.items().size();
     std::vector<std::optional<ScanResult>> evaluated(count);
     std::vector<std::exception_ptr> errors(count);
+    const auto signed_count = static_cast<std::ptrdiff_t>(count);
 #pragma omp parallel for schedule(dynamic, 1) if (constraints.has_value())
-    for (std::size_t item = 0; item < count; ++item) {
+    for (std::ptrdiff_t index = 0; index < signed_count; ++index) {
+        const auto item = static_cast<ItemIndex>(index);
         try {
             evaluated[item] = evaluate(catalog, item, pricing, filters, options, constraints);
         } catch (...) { // no exception may escape an OpenMP region
